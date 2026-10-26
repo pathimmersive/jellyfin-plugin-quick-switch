@@ -16,9 +16,14 @@
     <PackageReference Include="Jellyfin.Controller" Version="$(JellyfinVersion)" ExcludeAssets="runtime" />
   </ItemGroup>
 
-  <!-- The switcher script runs in jellyfin-web and is served from the plugin at /QuickSwitch/quick-switch.js. -->
+  <!-- The switcher script runs in jellyfin-web and is served from the plugin at /QuickSwitch/quick-switch.js.
+       Override with -p:SwitcherScriptPath=<file> to build with a different script for local testing. -->
+  <PropertyGroup>
+    <SwitcherScriptPath Condition="'$(SwitcherScriptPath)' == ''">$(MSBuildThisFileDirectory)..\switcher\quick-switch.js</SwitcherScriptPath>
+  </PropertyGroup>
+
   <ItemGroup>
-    <EmbeddedResource Include="..\switcher\quick-switch.js" LogicalName="quick-switch.js" />
+    <EmbeddedResource Include="$(SwitcherScriptPath)" LogicalName="quick-switch.js" />
   </ItemGroup>
 
   <!-- meta.json is the plugin manifest Jellyfin reads from the plugin folder. -->
