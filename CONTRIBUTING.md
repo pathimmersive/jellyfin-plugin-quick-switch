@@ -9,10 +9,10 @@ Open an issue with the bug report template. Include the Jellyfin server version,
 ## Making a change
 
 1. Fork the repository and branch from `main`, naming the branch `<type>/<short-name>`, for example `fix/webos-back-key`.
-2. Build and test as the [README](README.md#building-and-testing) describes. A change should pass `dotnet test`, the switcher tests and `bash scripts/check-community-files.sh`. Note anything checked by hand, with the client, device and Jellyfin version.
+2. Build and test as the [README](README.md#building-and-testing) describes. A change should pass `dotnet test`, the switcher tests, `bash scripts/check-community-files.sh` and, for server changes, `bash scripts/smoke-test.sh`. Note anything checked by hand, with the client, device and Jellyfin version.
 3. Write the pull request title as a [Conventional Commits](https://www.conventionalcommits.org/) subject: `feat:`, `fix:`, `docs:`, `test:`, `ci:` or `chore:`, then what changed, in 72 characters or fewer.
 4. Fill in the pull request template: what changed and why, and how it was checked. Link a related issue with `Fixes #N`.
-5. CI must pass before the change can merge. Pull requests are squash-merged, so the title and description become the commit on `main`.
+5. CI must pass before the change can merge. Pull requests are squash-merged into one commit on `main`, built from the pull request's commits, so give them Conventional Commits messages too.
 
 The switcher script in `src/switcher` is plain ES5 with no build step, because TV apps run older browser engines. Keep it that way.
 

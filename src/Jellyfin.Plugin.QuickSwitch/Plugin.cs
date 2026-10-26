@@ -1,5 +1,8 @@
 using System;
+using Jellyfin.Plugin.QuickSwitch.Configuration;
+using MediaBrowser.Common.Configuration;
 using MediaBrowser.Common.Plugins;
+using MediaBrowser.Model.Serialization;
 
 namespace Jellyfin.Plugin.QuickSwitch;
 
@@ -7,8 +10,18 @@ namespace Jellyfin.Plugin.QuickSwitch;
 /// The Quick Switch plugin entry point. It has no settings and stores nothing on
 /// the server: saved accounts live on each device.
 /// </summary>
-public class Plugin : BasePlugin
+public class Plugin : BasePlugin<PluginConfiguration>
 {
+    /// <summary>
+    /// Initializes a new instance of the <see cref="Plugin"/> class.
+    /// </summary>
+    /// <param name="applicationPaths">The server's application paths.</param>
+    /// <param name="xmlSerializer">The server's XML serializer.</param>
+    public Plugin(IApplicationPaths applicationPaths, IXmlSerializer xmlSerializer)
+        : base(applicationPaths, xmlSerializer)
+    {
+    }
+
     /// <summary>
     /// The plugin id, also written to meta.json by the build.
     /// </summary>
