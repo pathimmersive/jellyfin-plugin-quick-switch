@@ -1,3 +1,5 @@
+using System;
+using System.Linq;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -24,11 +26,29 @@ public class SwitcherScriptController : ControllerBase
 
     /// <summary>
     /// Serves the switcher script. Anonymous, because a script tag cannot attach an Authorization header,
-    /// and the script holds no account data of its own.
+    /// and the script holds no account data of its own. Clients revalidate it on every load, so a rebuilt
+    /// plugin reaches them even when its version is unchanged.
     /// </summary>
-    /// <returns>The script.</returns>
+    /// <returns>The script, or 304 when the client already has it.</returns>
     [HttpGet(SwitcherScript.FileName)]
     [AllowAnonymous]
     [ProducesResponseType(StatusCodes.Status200OK)]
-    public ActionResult GetScript() => File(_script.Open(), SwitcherScript.ContentType);
+    [ProducesResponseType(StatusCodes.Status304NotModified)]
+    public ActionResult GetScript()
+    {
+        Response.Headers.CacheControl = "no-cache";
+        Response.Headers.ETag = _script.ETag;
+        if (ClientHas(_script.ETag))
+        {
+            return StatusCode(StatusCodes.Status304NotModified);
+        }
+
+        return File(_script.Open(), SwitcherScript.ContentType);
+    }
+
+    // If-None-Match may list several entity tags, in one header or several.
+    private bool ClientHas(string etag) =>
+        Request.Headers.IfNoneMatch
+            .SelectMany(value => (value ?? string.Empty).Split(',', StringSplitOptions.TrimEntries))
+            .Any(candidate => candidate == etag || candidate == "*");
 }

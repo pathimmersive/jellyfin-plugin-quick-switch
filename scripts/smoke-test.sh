@@ -10,7 +10,8 @@ set -euo pipefail
 
 IMAGE="${JELLYFIN_IMAGE:-jellyfin/jellyfin:12.2.20261005-225228}"
 PLUGIN_NAME="Quick Switch"
-PLUGIN_DIR="QuickSwitch_0.1.0.0"
+PLUGIN_VERSION="0.1.0.0"
+PLUGIN_DIR="QuickSwitch_$PLUGIN_VERSION"
 ADMIN_USER="smoke"
 ADMIN_PW="smoke-$RANDOM$RANDOM"
 CLIENT_HEADER='MediaBrowser Client="quickswitch-smoke", Device="smoke", DeviceId="quickswitch-smoke", Version="1.0.0"'
@@ -136,7 +137,15 @@ check_script_served() {
     [ "$code" = "200" ] || fail "anonymous GET $prefix/$SCRIPT_PATH returned $code"
     grep -i -q '^content-type: *text/javascript' "$work/headers" || fail "GET $prefix/$SCRIPT_PATH is not text/javascript"
     cmp -s "$work/script" "$repo/src/switcher/quick-switch.js" || fail "GET $prefix/$SCRIPT_PATH is not src/switcher/quick-switch.js"
-    pass "anonymous GET $prefix/$SCRIPT_PATH serves src/switcher/quick-switch.js as text/javascript"
+    grep -i -q '^cache-control: *no-cache' "$work/headers" || fail "GET $prefix/$SCRIPT_PATH has no Cache-Control: no-cache"
+    etag="$(grep -i '^etag:' "$work/headers" | sed 's/^[^:]*: *//' | tr -d '\r')"
+    [ -n "$etag" ] || fail "GET $prefix/$SCRIPT_PATH has no ETag"
+    # curl creates the output file only when a body arrives, so start from none.
+    rm -f "$work/not-modified"
+    code="$(curl -s -o "$work/not-modified" -w '%{http_code}' -H "If-None-Match: $etag" "$prefix/$SCRIPT_PATH")"
+    [ "$code" = "304" ] || fail "GET $prefix/$SCRIPT_PATH with its ETag returned $code, expected 304"
+    [ ! -s "$work/not-modified" ] || fail "the 304 for $prefix/$SCRIPT_PATH has a body"
+    pass "anonymous GET $prefix/$SCRIPT_PATH serves src/switcher/quick-switch.js as text/javascript, no-cache, with an ETag that gets 304"
 }
 
 check_web_stock() {
@@ -150,11 +159,11 @@ check_web_stock() {
 check_web_patched() {
     local prefix="$1"
     curl -sf -o "$work/served" "$prefix/web/index.html" || fail "GET $prefix/web/index.html"
+    local tag="<script src=\"../QuickSwitch/quick-switch.js?v=$PLUGIN_VERSION\"></script>"
     count="$(grep -o '<script src="../QuickSwitch/quick-switch.js[^"]*"></script>' "$work/served" | wc -l | tr -d ' ')"
     [ "$count" = "1" ] || fail "$prefix/web/index.html carries $count switcher script tags, expected 1"
-    grep -q '<script src="../QuickSwitch/quick-switch.js[^"]*"></script></head>' "$work/served" \
-        || fail "$prefix/web/index.html does not carry the switcher tag right before </head>"
-    pass "with File Transformation, $prefix/web/index.html carries one switcher tag before </head>"
+    grep -q -F "$tag</head>" "$work/served" || fail "$prefix/web/index.html does not carry $tag right before </head>"
+    pass "with File Transformation, $prefix/web/index.html carries one switcher tag for version $PLUGIN_VERSION before </head>"
 }
 
 # Without File Transformation: the plugin loads, serves its script, and leaves jellyfin-web alone.
