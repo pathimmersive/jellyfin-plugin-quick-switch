@@ -44,6 +44,8 @@ node --test "tests/switcher/*.test.js" # switcher script tests
 bash scripts/check-community-files.sh  # community files
 ```
 
+`bash scripts/smoke-test.sh` also needs Docker. It loads the plugin into a real Jellyfin server, with and without [File Transformation](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) and under a BaseUrl, and checks what the server reports and serves. CI runs it on every pull request.
+
 ## Contributing and security
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md). Report security problems privately, as [SECURITY.md](SECURITY.md) describes.
