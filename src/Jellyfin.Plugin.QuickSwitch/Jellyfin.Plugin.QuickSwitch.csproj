@@ -1,0 +1,46 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Jellyfin.Plugin.QuickSwitch</RootNamespace>
+    <Version>0.1.0.0</Version>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- The plugin ABI the build declares; Jellyfin refuses to load a plugin whose targetAbi is newer than the server. -->
+    <JellyfinTargetAbi>12.0.0.0</JellyfinTargetAbi>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The host provides these at runtime; ExcludeAssets keeps them out of the plugin folder. -->
+    <PackageReference Include="Jellyfin.Controller" Version="$(JellyfinVersion)" ExcludeAssets="runtime" />
+  </ItemGroup>
+
+  <!-- The switcher script runs in jellyfin-web and is served from the plugin at /QuickSwitch/quick-switch.js. -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\switcher\quick-switch.js" LogicalName="quick-switch.js" />
+  </ItemGroup>
+
+  <!-- meta.json is the plugin manifest Jellyfin reads from the plugin folder. -->
+  <Target Name="WritePluginMeta" BeforeTargets="BeforeBuild">
+    <PropertyGroup>
+      <_PluginMetaPath>$(IntermediateOutputPath)meta.json</_PluginMetaPath>
+      <_PluginMetaJson>{
+  "category": "General",
+  "description": "Switch between the Jellyfin accounts saved on a shared device without signing out.",
+  "guid": "80f9de45-eed8-4c2b-97bd-25de685527d1",
+  "name": "Quick Switch",
+  "overview": "Fast account switching for shared TVs and devices.",
+  "owner": "quick-switch",
+  "targetAbi": "$(JellyfinTargetAbi)",
+  "version": "$(Version)"
+}</_PluginMetaJson>
+    </PropertyGroup>
+    <WriteLinesToFile File="$(_PluginMetaPath)" Lines="$(_PluginMetaJson)" Overwrite="true" WriteOnlyWhenDifferent="true" />
+    <ItemGroup>
+      <None Include="$(_PluginMetaPath)" Link="meta.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+      <FileWrites Include="$(_PluginMetaPath)" />
+    </ItemGroup>
+  </Target>
+
+</Project>
