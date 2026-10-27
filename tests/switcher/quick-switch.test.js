@@ -47,6 +47,7 @@ function wrap(quickSwitch) {
             list: (serverId) => plain(quickSwitch.store.list(serverId)),
             save: quickSwitch.store.save,
             forget: quickSwitch.store.forget,
+            markStale: quickSwitch.store.markStale,
         },
         avatar: (...args) => plain(quickSwitch.avatar(...args)),
     }
@@ -88,6 +89,22 @@ test('ignores an account without a user id or token, and forgets one by id', () 
     store.forget('s', 'b')
 
     assert.deepEqual(store.list('s'), [])
+})
+
+test('remembers a saved sign-in that stopped working until that account signs in again', () => {
+    const { store } = withStore()
+    store.save('s', { UserId: 'a', Name: 'Al', AccessToken: 'ta' })
+    store.save('s', { UserId: 'b', Name: 'Bea', AccessToken: 'old' })
+
+    store.markStale('s', 'b')
+    store.markStale('s', 'nobody')
+
+    assert.deepEqual(store.list('s').map((a) => [a.UserId, !!a.Stale]), [['a', false], ['b', true]])
+    assert.equal(store.list('s')[1].AccessToken, 'old')
+
+    store.save('s', { UserId: 'b', Name: 'Bea', AccessToken: 'new' })
+
+    assert.deepEqual(store.list('s').map((a) => [a.UserId, a.AccessToken, !!a.Stale]), [['a', 'ta', false], ['b', 'new', false]])
 })
 
 test('survives unreadable saved data', () => {

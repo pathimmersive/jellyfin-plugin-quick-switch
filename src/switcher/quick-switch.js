@@ -21,6 +21,7 @@
         edit: 'M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z',
         close: 'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z',
         error: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z',
+        lock: 'M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z',
         trash: 'M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z',
         addPerson: 'M15 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm-9-2V7H4v3H1v2h3v3h2v-3h3v-2H6zm9 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z',
         key: 'M12.65 10C11.83 7.67 9.61 6 7 6c-3.31 0-6 2.69-6 6s2.69 6 6 6c2.61 0 4.83-1.67 5.65-4H17v4h4v-4h2v-4H12.65zM7 14c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z',
@@ -94,6 +95,17 @@
         }
         value.servers[serverId] = accounts;
         writeStore(value);
+    }
+
+    function markStale(serverId, userId) {
+        var value = readStore();
+        var accounts = value.servers[serverId] instanceof Array ? value.servers[serverId] : [];
+        var at = indexOf(accounts, userId);
+        if (at !== -1) {
+            accounts[at].Stale = true;
+            value.servers[serverId] = accounts;
+            writeStore(value);
+        }
     }
 
     function forget(serverId, userId) {
@@ -288,6 +300,12 @@
         + '#quickswitch .qs-cancel{align-self:center;margin-top:6px;padding:10px 28px;border:0;border-radius:4px;background:none;color:rgba(255,255,255,.87);'
         + 'font:inherit;font-size:17px;font-weight:600;cursor:pointer;outline:none;}'
         + '#quickswitch .qs-cancel:focus,#quickswitch .qs-cancel:hover{background:rgba(255,255,255,.12);}'
+        + '#quickswitch .qs-stale .qs-avatar{background:#333 !important;}'
+        + '#quickswitch .qs-stale .qs-avatar img{opacity:.35;}'
+        + '#quickswitch .qs-stale .qs-initial{color:#8a8a8a;}'
+        + '#quickswitch .qs-stale .qs-tag{color:rgba(255,255,255,.7);}'
+        + '#quickswitch .qs-lock{background:#424242;}'
+        + '.qs-notice .qs-mini.qs-locked{background:#333 !important;}'
         + '#quickswitch .qs-remove{position:absolute;top:0;right:0;bottom:0;left:0;display:flex;align-items:center;justify-content:center;'
         + 'border-radius:50%;background:rgba(0,0,0,.6);}'
         + '#quickswitch .qs-confirm{width:560px;padding:36px 32px 28px;border-radius:4px;box-shadow:0 8px 30px rgba(0,0,0,.6);}'
@@ -379,7 +397,11 @@
         var button = el('button', 'qs-tile');
         button.type = 'button';
         button.setAttribute('data-qs-user', account.UserId);
-        var tag = current ? (managing ? 'Signed in now' : 'Watching now') : '';
+        var stale = !current && !managing && account.Stale;
+        var tag = current ? (managing ? 'Signed in now' : 'Watching now') : stale ? 'Sign in again' : '';
+        if (stale) {
+            button.className += ' qs-stale';
+        }
         button.setAttribute('aria-label', account.Name + (tag ? ', ' + tag.toLowerCase() : '') + (managing && !current ? ', remove' : ''));
         button.addEventListener('click', function () {
             if (!managing) {
@@ -395,6 +417,11 @@
             var cover = el('span', 'qs-remove');
             cover.appendChild(icon('trash', 46, '#fff'));
             circle.appendChild(cover);
+        }
+        if (stale) {
+            var lock = el('span', 'qs-badge qs-lock');
+            lock.appendChild(icon('lock', 20, '#fff'));
+            circle.appendChild(lock);
         }
         if (current) {
             var badge = el('span', 'qs-badge');
@@ -611,7 +638,9 @@
     // token is kept in the store, never revoked, and comes back on Back.
     var adding = null;
 
-    function startAdd(quick) {
+    // again, when given, is a saved account whose sign-in stopped working:
+    // the sign-in page opens for that account.
+    function startAdd(quick, again) {
         var now = signedIn();
         var saved = now ? list(now.serverId) : [];
         var at = now ? indexOf(saved, now.userId) : -1;
@@ -620,7 +649,7 @@
             toast('This version of jellyfin-web can\u2019t add an account here.', null, true);
             return;
         }
-        adding = { serverId: now.serverId, previous: saved[at], quick: quick, quickStarted: false };
+        adding = { serverId: now.serverId, previous: saved[at], quick: quick, quickStarted: false, again: again || null };
         try {
             var credentials = JSON.parse(window.localStorage.getItem(CREDENTIALS));
             var servers = credentials && credentials.Servers ? credentials.Servers : [];
@@ -650,20 +679,30 @@
         return null;
     }
 
-    function notice(account, text) {
+    function notice(account, text, locked) {
         var row = el('div', 'qs-notice-row');
         row.setAttribute('data-qs-notice', '');
         var box = el('div', 'qs-notice');
         box.setAttribute('role', 'note');
-        box.appendChild(avatarCircle(account, serverAddress(), 'qs-mini'));
+        if (locked) {
+            var badge = el('span', 'qs-mini qs-locked');
+            badge.appendChild(icon('lock', 16, '#fff'));
+            box.appendChild(badge);
+        } else {
+            box.appendChild(avatarCircle(account, serverAddress(), 'qs-mini'));
+        }
         box.appendChild(el('span', null, text));
         row.appendChild(box);
         return row;
     }
 
-    function addingText() {
+    function addingNotice() {
+        if (adding.again) {
+            var who = adding.again.Name;
+            return notice(adding.again, who + '\u2019s saved sign-in stopped working. Sign in again to keep ' + who + ' on ' + deviceWord() + '.', true);
+        }
         var name = adding.previous.Name;
-        return 'Adding an account. ' + name + ' stays saved; Back returns to ' + name + '.';
+        return notice(adding.previous, 'Adding an account. ' + name + ' stays saved; Back returns to ' + name + '.');
     }
 
     // Puts the notice line on jellyfin-web's sign-in page and its Quick
@@ -677,7 +716,7 @@
                 if (title && !forms[i].querySelector('[data-qs-notice]')) {
                     addStyles();
                     var anchor = title.parentNode === forms[i] ? title : title.parentNode;
-                    forms[i].insertBefore(notice(adding.previous, addingText()), anchor.nextSibling);
+                    forms[i].insertBefore(addingNotice(), anchor.nextSibling);
                 }
             }
             var manual = page.querySelector('.btnManual');
@@ -689,17 +728,45 @@
                 adding.manualShown = true;
                 manual.click();
             }
+            if (adding.again && !adding.filling) {
+                adding.filling = true;
+                fillName(adding, 0);
+            }
         }
         var code = document.querySelector('#quickConnectAlert .dialogContentInner');
         if (code && !code.querySelector('[data-qs-notice]')) {
             addStyles();
-            code.appendChild(notice(adding.previous, addingText()));
+            code.appendChild(addingNotice());
             // The dialog keeps its text to 350px; the notice reads better on one line.
             var content = code.parentNode;
             if (content && content.className.indexOf('formDialogContent') !== -1) {
                 content.style.maxWidth = 'none';
             }
         }
+    }
+
+    // jellyfin-web empties the user name as it shows the form, so the name is
+    // put back for a few seconds, until someone types in the field.
+    function fillName(state, tries) {
+        if (adding !== state || tries > 20) {
+            return;
+        }
+        var page = visibleLogin();
+        var name = page && page.querySelector('#txtManualName');
+        if (name && name.offsetWidth > 0 && !state.typed) {
+            if (!name.qsWatched) {
+                name.qsWatched = true;
+                name.addEventListener('input', function () { state.typed = true; });
+            }
+            if (name.value !== state.again.Name) {
+                name.value = state.again.Name;
+                var password = page.querySelector('#txtManualPassword');
+                if (password) {
+                    password.focus();
+                }
+            }
+        }
+        window.setTimeout(function () { fillName(state, tries + 1); }, 250);
     }
 
     function removeNotices() {
@@ -710,9 +777,10 @@
     }
 
     function added(account) {
+        var again = adding.again && adding.again.UserId === account.UserId;
         adding = null;
         removeNotices();
-        toast(account.Name + ' is saved on ' + deviceWord(), account);
+        toast(again ? 'Now watching as ' + account.Name : account.Name + ' is saved on ' + deviceWord(), account);
     }
 
     // Signs jellyfin-web in as user in place, then rebuilds home; never a
@@ -882,6 +950,10 @@
             toast('This version of jellyfin-web can\u2019t switch accounts in place.', null, true);
             return;
         }
+        if (account.Stale) {
+            startAdd(false, account);
+            return;
+        }
         switching = true;
         var started = new Date().getTime();
         splash(account);
@@ -898,7 +970,10 @@
                 return;
             }
             if (status !== 200 || !user || user.Id !== account.UserId) {
-                back(account.Name + '\u2019s saved sign-in stopped working.');
+                switching = false;
+                markStale(now.serverId, account.UserId);
+                account.Stale = true;
+                startAdd(false, account);
                 return;
             }
             var fresh = { UserId: user.Id, Name: user.Name, AccessToken: account.AccessToken, PrimaryImageTag: user.PrimaryImageTag };
@@ -1176,7 +1251,7 @@
         version: VERSION,
         open: open,
         close: close,
-        store: { list: list, save: save, forget: forget },
+        store: { list: list, save: save, forget: forget, markStale: markStale },
         avatar: avatar
     };
 
