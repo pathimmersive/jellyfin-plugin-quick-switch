@@ -502,13 +502,10 @@
         overlay.className = (tv ? 'qs-tv' : '') + (accounts.length > 4 ? ' qs-many' : '');
         overlay.innerHTML = '';
         var panel = el('div', 'qs-panel');
-        var single = accounts.length === 1 && !managing;
-        panel.appendChild(el('h1', null, managing ? 'Manage Accounts' : single ? 'Add someone to switch to' : 'Who’s watching?'));
+        panel.appendChild(el('h1', null, managing ? 'Manage Accounts' : 'Who’s watching?'));
         panel.appendChild(el('p', 'qs-sub', managing
             ? 'Choose an account to remove from ' + device
-            : single
-                ? 'Accounts you add stay on ' + device + ', so switching needs no password'
-                : 'Switch accounts on ' + device + ' without a password'));
+            : 'Select or add an account'));
         var row = el('div', 'qs-row');
         var focusFirst = null;
         for (var i = 0; i < accounts.length; i++) {
