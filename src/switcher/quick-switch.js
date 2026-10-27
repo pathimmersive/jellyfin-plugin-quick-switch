@@ -21,6 +21,7 @@
         edit: 'M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z',
         close: 'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z',
         error: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z',
+        trash: 'M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z',
         addPerson: 'M15 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm-9-2V7H4v3H1v2h3v3h2v-3h3v-2H6zm9 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z',
         key: 'M12.65 10C11.83 7.67 9.61 6 7 6c-3.31 0-6 2.69-6 6s2.69 6 6 6c2.61 0 4.83-1.67 5.65-4H17v4h4v-4h2v-4H12.65zM7 14c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z',
         quickConnect: 'M19 1H9c-1.1 0-2 .9-2 2v3h2V4h10v16H9v-2H7v3c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V3c0-1.1-.9-2-2-2zm-8.2 10V9.5C10.8 8.1 9.4 7 8 7S5.2 8.1 5.2 9.5V11c-.6 0-1.2.6-1.2 1.2v3.5c0 .7.6 1.3 1.2 1.3h5.5c.7 0 1.3-.6 1.3-1.2v-3.5c0-.7-.6-1.3-1.2-1.3zm-1.3 0h-3V9.5c0-.8.7-1.3 1.5-1.3s1.5.5 1.5 1.3V11z',
@@ -287,6 +288,14 @@
         + '#quickswitch .qs-cancel{align-self:center;margin-top:6px;padding:10px 28px;border:0;border-radius:4px;background:none;color:rgba(255,255,255,.87);'
         + 'font:inherit;font-size:17px;font-weight:600;cursor:pointer;outline:none;}'
         + '#quickswitch .qs-cancel:focus,#quickswitch .qs-cancel:hover{background:rgba(255,255,255,.12);}'
+        + '#quickswitch .qs-remove{position:absolute;top:0;right:0;bottom:0;left:0;display:flex;align-items:center;justify-content:center;'
+        + 'border-radius:50%;background:rgba(0,0,0,.6);}'
+        + '#quickswitch .qs-confirm{width:560px;padding:36px 32px 28px;border-radius:4px;box-shadow:0 8px 30px rgba(0,0,0,.6);}'
+        + '#quickswitch .qs-confirm .qs-avatar{align-self:center;width:96px;height:96px;margin-bottom:18px;}'
+        + '#quickswitch .qs-confirm .qs-initial{font-size:44px;}'
+        + '#quickswitch .qs-confirm h2{font-weight:400;margin-bottom:18px;}'
+        + '#quickswitch .qs-confirm p{margin-bottom:26px;}'
+        + '#quickswitch .qs-wide{display:block;width:100%;margin-top:10px;padding:16px;font-size:18px;text-align:center;}'
         + '.qs-notice-row{display:flex;justify-content:center;margin:0 0 22px;}'
         + '.qs-notice{display:flex;align-items:center;padding:8px 16px 8px 8px;border-radius:4px;background:#202020;color:rgba(255,255,255,.87);font-size:17px;text-align:left;}'
         + '.qs-notice .qs-mini{display:flex;flex:none;align-items:center;justify-content:center;width:30px;height:30px;margin-right:12px;border-radius:50%;'
@@ -366,13 +375,27 @@
         return circle;
     }
 
-    function tile(account, current, server) {
+    function tile(account, current, server, managing) {
         var button = el('button', 'qs-tile');
         button.type = 'button';
         button.setAttribute('data-qs-user', account.UserId);
-        button.setAttribute('aria-label', account.Name + (current ? ', watching now' : ''));
-        button.addEventListener('click', function () { pick(account); });
+        var tag = current ? (managing ? 'Signed in now' : 'Watching now') : '';
+        button.setAttribute('aria-label', account.Name + (tag ? ', ' + tag.toLowerCase() : '') + (managing && !current ? ', remove' : ''));
+        button.addEventListener('click', function () {
+            if (!managing) {
+                pick(account);
+            } else if (current) {
+                toast(account.Name + ' is signed in now, so it stays', account);
+            } else {
+                showConfirm(account);
+            }
+        });
         var circle = avatarCircle(account, server, 'qs-avatar');
+        if (managing && !current) {
+            var cover = el('span', 'qs-remove');
+            cover.appendChild(icon('trash', 46, '#fff'));
+            circle.appendChild(cover);
+        }
         if (current) {
             var badge = el('span', 'qs-badge');
             badge.appendChild(icon('check', 22, 'rgba(0,0,0,.87)'));
@@ -380,8 +403,8 @@
         }
         button.appendChild(circle);
         button.appendChild(el('span', 'qs-name', account.Name));
-        if (current) {
-            button.appendChild(el('span', 'qs-tag', 'Watching now'));
+        if (tag) {
+            button.appendChild(el('span', 'qs-tag', tag));
         }
         return button;
     }
@@ -398,7 +421,7 @@
         return button;
     }
 
-    function hints() {
+    function hints(backLabel) {
         var box = el('div', 'qs-hints');
         box.setAttribute('aria-hidden', 'true');
         var ok = el('span');
@@ -406,7 +429,7 @@
         ok.appendChild(document.createTextNode('Select'));
         var back = el('span');
         back.appendChild(el('span', 'qs-key', 'BACK'));
-        back.appendChild(document.createTextNode('Close'));
+        back.appendChild(document.createTextNode(backLabel));
         var red = el('span');
         red.appendChild(el('span', 'qs-red'));
         red.appendChild(document.createTextNode('Opens this from any screen'));
@@ -416,8 +439,11 @@
         return box;
     }
 
-    function render() {
-        mode = 'pick';
+    // nextMode is 'pick' (Who's watching?) or 'manage' (Manage Accounts);
+    // focusOn names what gets focus, a user id or 'manage'.
+    function render(nextMode, focusOn) {
+        mode = nextMode === 'manage' ? 'manage' : 'pick';
+        var managing = mode === 'manage';
         var now = signedIn();
         var tv = isTv();
         var accounts = now ? list(now.serverId) : [];
@@ -427,34 +453,42 @@
         overlay.className = (tv ? 'qs-tv' : '') + (accounts.length > 4 ? ' qs-many' : '');
         overlay.innerHTML = '';
         var panel = el('div', 'qs-panel');
-        var single = accounts.length === 1;
-        panel.appendChild(el('h1', null, single ? 'Add someone to switch to' : 'Who’s watching?'));
-        panel.appendChild(el('p', 'qs-sub', single
-            ? 'Accounts you add stay on ' + device + ', so switching needs no password'
-            : 'Switch accounts on ' + device + ' without a password'));
+        var single = accounts.length === 1 && !managing;
+        panel.appendChild(el('h1', null, managing ? 'Manage Accounts' : single ? 'Add someone to switch to' : 'Who’s watching?'));
+        panel.appendChild(el('p', 'qs-sub', managing
+            ? 'Choose an account to remove from ' + device
+            : single
+                ? 'Accounts you add stay on ' + device + ', so switching needs no password'
+                : 'Switch accounts on ' + device + ' without a password'));
         var row = el('div', 'qs-row');
         var focusFirst = null;
         for (var i = 0; i < accounts.length; i++) {
             var current = !!now && accounts[i].UserId === now.userId;
-            var button = tile(accounts[i], current, server);
-            if (current) {
+            var button = tile(accounts[i], current, server, managing);
+            if (focusOn ? accounts[i].UserId === focusOn : current) {
                 focusFirst = button;
             }
             row.appendChild(button);
         }
-        var add = addTile();
-        row.appendChild(add);
+        var add = managing ? null : addTile();
+        if (add) {
+            row.appendChild(add);
+        }
         panel.appendChild(row);
         var manage = el('button', 'qs-button');
         manage.type = 'button';
         manage.setAttribute('data-qs-action', 'manage');
         manage.appendChild(icon('edit', 22));
-        manage.appendChild(document.createTextNode('Manage Accounts'));
+        manage.appendChild(document.createTextNode(managing ? 'Done' : 'Manage Accounts'));
+        manage.addEventListener('click', function () { render(managing ? 'pick' : 'manage', 'manage'); });
         panel.appendChild(manage);
+        if (focusOn === 'manage') {
+            focusFirst = manage;
+        }
         overlay.appendChild(panel);
 
         if (tv) {
-            overlay.appendChild(hints());
+            overlay.appendChild(hints(managing ? 'Done' : 'Close'));
         } else {
             var closeButton = el('button', 'qs-close');
             closeButton.type = 'button';
@@ -464,7 +498,7 @@
             closeButton.addEventListener('click', close);
             overlay.appendChild(closeButton);
         }
-        (focusFirst || add).focus();
+        (focusFirst || add || manage).focus();
     }
 
     function deviceWord() {
@@ -515,6 +549,52 @@
         scrim.appendChild(dialog);
         overlay.appendChild(scrim);
         password.focus();
+    }
+
+    // Asks before removing; focus starts on Keep, so a stray OK removes nobody.
+    function showConfirm(account) {
+        mode = 'confirm';
+        var scrim = el('div', 'qs-scrim');
+        var dialog = el('div', 'qs-dialog qs-confirm');
+        dialog.setAttribute('role', 'dialog');
+        dialog.setAttribute('aria-modal', 'true');
+        dialog.setAttribute('aria-label', 'Remove ' + account.Name);
+        dialog.appendChild(avatarCircle(account, serverAddress(), 'qs-avatar'));
+        dialog.appendChild(el('h2', null, 'Remove ' + account.Name + ' from ' + deviceWord() + '?'));
+        dialog.appendChild(el('p', null, account.Name + ' is signed out here. Their account and watch history stay on the server, and signing in again adds them back.'));
+        var keep = el('button', 'qs-button qs-wide', 'Keep');
+        keep.type = 'button';
+        keep.setAttribute('data-qs-action', 'confirm-keep');
+        keep.addEventListener('click', function () { render('manage', account.UserId); });
+        var remove = el('button', 'qs-button qs-wide', 'Remove');
+        remove.type = 'button';
+        remove.setAttribute('data-qs-action', 'confirm-remove');
+        remove.addEventListener('click', function () { removeAccount(account); });
+        dialog.appendChild(keep);
+        dialog.appendChild(remove);
+        scrim.appendChild(dialog);
+        overlay.appendChild(scrim);
+        keep.focus();
+    }
+
+    // Revokes the removed account's own token (decision 0004), then forgets
+    // it whatever the server said; the account signed in is never touched.
+    var removing = false;
+
+    function removeAccount(account) {
+        var now = signedIn();
+        if (!now || removing || account.UserId === now.userId) {
+            return;
+        }
+        removing = true;
+        request('POST', 'Sessions/Logout', account.AccessToken, function () {
+            removing = false;
+            forget(now.serverId, account.UserId);
+            if (overlay) {
+                render('manage', 'manage');
+            }
+            toast(account.Name + ' removed from ' + deviceWord());
+        });
     }
 
     function hideAdd() {
@@ -852,6 +932,13 @@
             event.stopPropagation();
             if (mode === 'add') {
                 hideAdd();
+            } else if (mode === 'confirm') {
+                var keep = overlay.querySelector('[data-qs-action="confirm-keep"]');
+                if (keep) {
+                    keep.click();
+                }
+            } else if (mode === 'manage') {
+                render('pick', 'manage');
             } else {
                 close();
             }
