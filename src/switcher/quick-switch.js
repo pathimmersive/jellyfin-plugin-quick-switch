@@ -20,11 +20,12 @@
         plus: 'M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z',
         edit: 'M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z',
         close: 'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z',
-        error: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z'
+        error: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z',
+        switchAccount: 'M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-6 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm6 11H8v-1.5c0-1.99 4-3 6-3s6 1.01 6 3V16z'
     };
     // The splash stays up at least this long, so a fast switch doesn't flicker.
     var SPLASH_MS = 900;
-    var KEY = { escape: 27, back: 461, tizenBack: 10009, browserBack: 166 };
+    var KEY = { escape: 27, back: 461, tizenBack: 10009, browserBack: 166, red: 403, enter: 13, space: 32 };
 
     // Saved accounts, per server, in this browser's localStorage. Only accounts
     // that signed in on this device are ever saved.
@@ -258,6 +259,17 @@
         + '.qs-toast .qs-mini img{width:100%;height:100%;object-fit:cover;}'
         + '.qs-toast svg{flex:none;margin-right:12px;}'
         + '.layout-tv .qs-toast{font-size:20px;}'
+        + '[data-qs-entry="menu"] .MuiListItemText-primary{white-space:nowrap;}'
+        + '.qs-stack{display:flex;flex:none;align-items:center;margin-left:16px;}'
+        + '.qs-stack .qs-dot{display:block;width:18px;height:18px;margin-left:-6px;border-radius:50%;overflow:hidden;box-shadow:0 0 0 2px #383838;}'
+        + '.qs-stack .qs-dot:first-child{margin-left:0;}'
+        + '.qs-stack .qs-dot img{display:block;width:100%;height:100%;object-fit:cover;}'
+        + '.qs-stack .qs-initial{display:none;}'
+        + '[data-qs-entry="settings"] .listItem{display:flex;align-items:center;}'
+        + '[data-qs-entry="settings"] .listItemBody{flex:1;}'
+        + '[data-qs-entry="settings"] .qs-stack{padding-right:10px;}'
+        + '[data-qs-entry="settings"] .qs-dot{width:26px;height:26px;margin-left:-8px;box-shadow:0 0 0 2px #101010;}'
+        + '[data-qs-entry="settings"]:focus .qs-dot{box-shadow:0 0 0 2px ' + ACCENT + ';}'
         + '@media (max-width:600px){#quickswitch .qs-row{max-width:300px;}#quickswitch .qs-tile{width:120px;margin:0 15px 26px;}'
         + '#quickswitch .qs-avatar{width:104px;height:104px;}#quickswitch .qs-initial{font-size:46px;}#quickswitch h1{font-size:26px;}'
         + '#quickswitch .qs-name{font-size:16px;}}';
@@ -611,6 +623,196 @@
         opener = null;
     }
 
+    // Where the switcher opens from (decision 0005): an item in the desktop and
+    // phone User Menu, a row in the TV settings page's User section, and the
+    // remote's red button. The first two are found by the structure jellyfin-web
+    // gives them; when that changes they are simply not added.
+
+    // Up to three other saved accounts, shown as small circles beside an entry.
+    function others() {
+        var now = signedIn();
+        var saved = now ? list(now.serverId) : [];
+        var result = [];
+        for (var i = 0; i < saved.length && result.length < 3; i++) {
+            if (saved[i].UserId !== now.userId) {
+                result.push(saved[i]);
+            }
+        }
+        return result;
+    }
+
+    // Fills an entry's circles again only when the accounts changed, so the
+    // observer below doesn't feed on its own changes.
+    function updateStack(entry) {
+        var accounts = others();
+        var key = '';
+        for (var i = 0; i < accounts.length; i++) {
+            key += accounts[i].UserId + (accounts[i].PrimaryImageTag || '') + ',';
+        }
+        if (entry.getAttribute('data-qs-stack') === key) {
+            return;
+        }
+        entry.setAttribute('data-qs-stack', key);
+        var box = entry.querySelector('.qs-stack');
+        box.innerHTML = '';
+        var server = serverAddress();
+        for (var j = 0; j < accounts.length; j++) {
+            box.appendChild(avatarCircle(accounts[j], server, 'qs-dot'));
+        }
+    }
+
+    function stack() {
+        var box = el('span', 'qs-stack');
+        box.setAttribute('aria-hidden', 'true');
+        return box;
+    }
+
+    function classOf(root, selector) {
+        var found = root.querySelector(selector);
+        return found ? found.getAttribute('class') || '' : '';
+    }
+
+    function closest(node, attribute, value) {
+        while (node && node.getAttribute) {
+            if (node.getAttribute(attribute) === value) {
+                return node;
+            }
+            node = node.parentNode;
+        }
+        return null;
+    }
+
+    // jellyfin-web's MUI menu closes when its backdrop is clicked; the switcher
+    // opens once the menu is gone, so the menu doesn't take focus back from it.
+    function openFromMenu() {
+        var backdrop = document.querySelector('#app-user-menu .MuiBackdrop-root');
+        if (backdrop) {
+            backdrop.click();
+        }
+        var tries = 0;
+        var wait = function () {
+            var menu = document.getElementById('app-user-menu');
+            if (!menu || menu.className.indexOf('MuiModal-hidden') !== -1 || ++tries > 20) {
+                open();
+            } else {
+                window.setTimeout(wait, 50);
+            }
+        };
+        window.setTimeout(wait, 50);
+    }
+
+    // The User Menu item takes its classes from Sign Out, so it looks and
+    // behaves like the items around it, and sits just above it.
+    function addMenuItem() {
+        var root = document.getElementById('app-user-menu');
+        var menu = root && root.querySelector('[role="menu"]');
+        if (!menu) {
+            return;
+        }
+        var item = menu.querySelector('[data-qs-entry]');
+        if (!item) {
+            var logout = menu.querySelector('[data-testid="LogoutIcon"]');
+            var model = logout ? closest(logout, 'role', 'menuitem') : null;
+            if (!model) {
+                return;
+            }
+            item = el('li', model.getAttribute('class'));
+            item.setAttribute('role', 'menuitem');
+            item.setAttribute('tabindex', '-1');
+            item.setAttribute('data-qs-entry', 'menu');
+            var iconBox = el('div', classOf(model, '.MuiListItemIcon-root'));
+            var svg = icon('switchAccount', 24);
+            svg.setAttribute('class', classOf(model, 'svg'));
+            iconBox.appendChild(svg);
+            item.appendChild(iconBox);
+            var textBox = el('div', classOf(model, '.MuiListItemText-root'));
+            textBox.appendChild(el('span', classOf(model, '.MuiListItemText-primary'), 'Switch Account'));
+            item.appendChild(textBox);
+            item.appendChild(stack());
+            item.addEventListener('click', openFromMenu);
+            item.addEventListener('keydown', function (event) {
+                if (event.keyCode === KEY.enter || event.keyCode === KEY.space) {
+                    event.preventDefault();
+                    openFromMenu();
+                }
+            });
+            addStyles();
+            model.parentNode.insertBefore(item, model);
+        }
+        updateStack(item);
+    }
+
+    // The TV settings page row copies Sign Out's markup and goes first in the
+    // User section.
+    function addSettingsRow() {
+        var page = document.getElementById('myPreferencesMenuPage');
+        var section = page && page.querySelector('.userSection');
+        if (!section || !isTv()) {
+            return;
+        }
+        var row = section.querySelector('[data-qs-entry]');
+        if (!row) {
+            var model = section.querySelector('.btnLogout');
+            if (!model) {
+                return;
+            }
+            row = el('a', model.getAttribute('class').replace(/\s*\bbtnLogout\b/, ''));
+            row.href = '#';
+            row.setAttribute('data-qs-entry', 'settings');
+            row.style.cssText = model.style.cssText;
+            var line = el('div', 'listItem');
+            var glyph = el('span', 'material-icons listItemIcon listItemIcon-transparent switch_account');
+            glyph.setAttribute('aria-hidden', 'true');
+            line.appendChild(glyph);
+            var body = el('div', 'listItemBody');
+            body.appendChild(el('div', 'listItemBodyText', 'Switch Account'));
+            line.appendChild(body);
+            line.appendChild(stack());
+            row.appendChild(line);
+            row.addEventListener('click', function (event) {
+                event.preventDefault();
+                open();
+            });
+            addStyles();
+            var title = section.querySelector('.sectionTitle');
+            section.insertBefore(row, title ? title.nextSibling : section.firstChild);
+        }
+        updateStack(row);
+    }
+
+    function addEntries() {
+        if (signedIn()) {
+            addMenuItem();
+            addSettingsRow();
+        }
+    }
+
+    function onRedButton(event) {
+        if (event.keyCode !== KEY.red) {
+            return;
+        }
+        event.preventDefault();
+        if (!overlay && signedIn()) {
+            open();
+        }
+    }
+
+    function start() {
+        var queued = false;
+        var observer = new window.MutationObserver(function () {
+            if (!queued) {
+                queued = true;
+                window.setTimeout(function () {
+                    queued = false;
+                    addEntries();
+                }, 0);
+            }
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+        document.addEventListener('keydown', onRedButton, true);
+        addEntries();
+    }
+
     window.QuickSwitch = {
         version: VERSION,
         open: open,
@@ -621,5 +823,13 @@
 
     if (typeof window.setInterval === 'function') {
         window.setInterval(watch, 1000);
+    }
+
+    if (typeof document !== 'undefined' && typeof window.MutationObserver === 'function') {
+        if (document.body) {
+            start();
+        } else {
+            document.addEventListener('DOMContentLoaded', start);
+        }
     }
 })();
