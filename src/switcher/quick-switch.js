@@ -31,7 +31,7 @@
     // The splash stays up at least this long, so a fast switch doesn't flicker.
     var SPLASH_MS = 900;
     var CREDENTIALS = 'jellyfin_credentials';
-    var KEY = { escape: 27, back: 461, tizenBack: 10009, browserBack: 166, red: 403, enter: 13, space: 32 };
+    var KEY = { escape: 27, back: 461, tizenBack: 10009, browserBack: 166, red: 403, enter: 13, space: 32, left: 37, up: 38, right: 39, down: 40, tab: 9 };
 
     // Saved accounts, per server, in this browser's localStorage. Only accounts
     // that signed in on this device are ever saved.
@@ -992,14 +992,97 @@
         });
     }
 
+    // The controls of the top layer: the open dialog, else the switcher.
+    function controls() {
+        var scrims = overlay.querySelectorAll('.qs-scrim');
+        var layer = scrims.length ? scrims[scrims.length - 1] : overlay;
+        var found = layer.querySelectorAll('button');
+        var result = [];
+        for (var i = 0; i < found.length; i++) {
+            if (found[i].offsetWidth > 0) {
+                result.push(found[i]);
+            }
+        }
+        return result;
+    }
+
+    // Moves focus to the nearest control wholly past the focused one in the
+    // arrow's direction, scoring the gap along the arrow plus twice the
+    // distance between centres across it; at the edge focus stays put, as in
+    // jellyfin-web.
+    function moveFocus(code) {
+        var items = controls();
+        var from = document.activeElement;
+        if (items.indexOf(from) === -1) {
+            if (items.length) {
+                items[0].focus();
+            }
+            return;
+        }
+        var a = from.getBoundingClientRect();
+        var ax = a.left + a.width / 2;
+        var ay = a.top + a.height / 2;
+        var best = null;
+        var bestScore = Infinity;
+        for (var i = 0; i < items.length; i++) {
+            if (items[i] === from) {
+                continue;
+            }
+            var b = items[i].getBoundingClientRect();
+            var along = code === KEY.left ? a.left - b.right : code === KEY.right ? b.left - a.right : code === KEY.up ? a.top - b.bottom : b.top - a.bottom;
+            var across = code === KEY.left || code === KEY.right
+                ? Math.abs(b.top + b.height / 2 - ay)
+                : Math.abs(b.left + b.width / 2 - ax);
+            if (along < -1) {
+                continue;
+            }
+            var score = Math.max(0, along) + 2 * across;
+            if (score < bestScore) {
+                bestScore = score;
+                best = items[i];
+            }
+        }
+        if (best) {
+            best.focus();
+        }
+    }
+
+    // While the switcher is open it takes every key, so jellyfin-web's own
+    // focus never moves behind it. The remote's OK is a key, not a click.
     function onKey(event) {
         if (!overlay) {
             return;
         }
         var code = event.keyCode;
+        if (code === KEY.red) {
+            return;
+        }
+        event.stopPropagation();
         if (switching) {
             event.preventDefault();
-            event.stopPropagation();
+            return;
+        }
+        if (code === KEY.left || code === KEY.up || code === KEY.right || code === KEY.down) {
+            event.preventDefault();
+            moveFocus(code);
+            return;
+        }
+        if (code === KEY.tab) {
+            event.preventDefault();
+            var items = controls();
+            var at = items.indexOf(document.activeElement);
+            var next = event.shiftKey ? (at <= 0 ? items.length - 1 : at - 1) : (at + 1) % items.length;
+            if (items[next]) {
+                items[next].focus();
+            }
+            return;
+        }
+        if (code === KEY.enter) {
+            event.preventDefault();
+            var focused = document.activeElement;
+            if (focused && overlay.contains(focused) && typeof focused.click === 'function') {
+                focused.click();
+            }
             return;
         }
         if (isBackKey(event)) {
@@ -1020,6 +1103,14 @@
         }
     }
 
+    // jellyfin-web acts on some keys as they come up, so those stay with the
+    // switcher too.
+    function onKeyUp(event) {
+        if (overlay && event.keyCode !== KEY.red) {
+            event.stopPropagation();
+        }
+    }
+
     function open() {
         if (!document.body) {
             return;
@@ -1034,6 +1125,7 @@
             overlay.setAttribute('aria-label', 'Who’s watching?');
             document.body.appendChild(overlay);
             document.addEventListener('keydown', onKey, true);
+            document.addEventListener('keyup', onKeyUp, true);
         }
         render();
     }
@@ -1043,6 +1135,7 @@
             return;
         }
         document.removeEventListener('keydown', onKey, true);
+        document.removeEventListener('keyup', onKeyUp, true);
         overlay.parentNode.removeChild(overlay);
         overlay = null;
         if (opener && document.body.contains(opener) && typeof opener.focus === 'function') {
