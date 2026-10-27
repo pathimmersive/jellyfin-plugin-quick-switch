@@ -884,6 +884,67 @@
         }
     }
 
+    // On an LG TV the remote's keys reach the page only once something in it
+    // has focus. jellyfin-web focuses a card on a home screen with libraries;
+    // with none, nothing is focused and the remote does nothing, red button
+    // included. So at start-up in the TV layout, when a page has been showing
+    // for a few seconds with nothing focused, focus goes to the header.
+    var keyPressed = false;
+
+    function onFirstKey() {
+        keyPressed = true;
+        document.removeEventListener('keydown', onFirstKey, true);
+    }
+
+    function headerTarget() {
+        var header = document.querySelector('.skinHeader');
+        if (!header) {
+            return null;
+        }
+        var tab = header.querySelector('.emby-tab-button-active');
+        if (tab && tab.offsetWidth > 0) {
+            return tab;
+        }
+        var buttons = header.querySelectorAll('button');
+        var best = null;
+        var bestBox = null;
+        for (var i = 0; i < buttons.length; i++) {
+            var box = buttons[i].getBoundingClientRect();
+            if (box.width === 0 || buttons[i].disabled || buttons[i].className.indexOf('hide') !== -1) {
+                continue;
+            }
+            if (!best || box.top < bestBox.top - 4 || (Math.abs(box.top - bestBox.top) <= 4 && box.left < bestBox.left)) {
+                best = buttons[i];
+                bestBox = box;
+            }
+        }
+        return best;
+    }
+
+    function nothingFocused() {
+        var active = document.activeElement;
+        return !active || active === document.body || active === document.documentElement;
+    }
+
+    function focusAtStart(tries, shownFor) {
+        if (keyPressed || tries <= 0) {
+            return;
+        }
+        var page = document.querySelector('.page:not(.hide)');
+        var ready = isTv() && !overlay && !adding && signedIn() && !visibleLogin() && page;
+        shownFor = ready ? shownFor + 250 : 0;
+        if (ready && shownFor >= 2500) {
+            if (nothingFocused()) {
+                var target = headerTarget();
+                if (target) {
+                    target.focus();
+                }
+            }
+            return;
+        }
+        window.setTimeout(function () { focusAtStart(tries - 1, shownFor); }, 250);
+    }
+
     function isBackKey(event) {
         var code = event.keyCode;
         return code === KEY.escape || code === KEY.back || code === KEY.tizenBack || code === KEY.browserBack || event.key === 'GoBack';
@@ -1398,6 +1459,8 @@
         observer.observe(document.body, { childList: true, subtree: true });
         document.addEventListener('keydown', onRedButton, true);
         resumeAfterRestart(60);
+        document.addEventListener('keydown', onFirstKey, true);
+        focusAtStart(60, 0);
         document.addEventListener('keydown', onAddingKey, true);
         window.addEventListener('popstate', onAddingRoute);
         window.addEventListener('hashchange', onAddingRoute);
