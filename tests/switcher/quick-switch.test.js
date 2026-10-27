@@ -48,6 +48,9 @@ function wrap(quickSwitch) {
             save: quickSwitch.store.save,
             forget: quickSwitch.store.forget,
             markStale: quickSwitch.store.markStale,
+            startAdding: quickSwitch.store.startAdding,
+            addingFrom: quickSwitch.store.addingFrom,
+            stopAdding: quickSwitch.store.stopAdding,
         },
         avatar: (...args) => plain(quickSwitch.avatar(...args)),
     }
@@ -105,6 +108,22 @@ test('remembers a saved sign-in that stopped working until that account signs in
     store.save('s', { UserId: 'b', Name: 'Bea', AccessToken: 'new' })
 
     assert.deepEqual(store.list('s').map((a) => [a.UserId, a.AccessToken, !!a.Stale]), [['a', 'ta', false], ['b', 'new', false]])
+})
+
+test('remembers an add in progress per server until it finishes or is cancelled', () => {
+    const { store } = withStore()
+
+    store.startAdding('s1', 'a')
+    store.startAdding('s2', 'b')
+
+    assert.equal(store.addingFrom('s1'), 'a')
+    assert.equal(store.addingFrom('s2'), 'b')
+    assert.equal(store.addingFrom('s3'), null)
+
+    store.stopAdding('s1')
+
+    assert.equal(store.addingFrom('s1'), null)
+    assert.equal(store.addingFrom('s2'), 'b')
 })
 
 test('survives unreadable saved data', () => {
