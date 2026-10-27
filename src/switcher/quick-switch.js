@@ -19,8 +19,11 @@
         check: 'M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z',
         plus: 'M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z',
         edit: 'M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z',
-        close: 'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z'
+        close: 'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z',
+        error: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z'
     };
+    // The splash stays up at least this long, so a fast switch doesn't flicker.
+    var SPLASH_MS = 900;
     var KEY = { escape: 27, back: 461, tizenBack: 10009, browserBack: 166 };
 
     // Saved accounts, per server, in this browser's localStorage. Only accounts
@@ -238,6 +241,23 @@
         + '#quickswitch.qs-many .qs-avatar{width:132px;height:132px;}'
         + '#quickswitch.qs-many .qs-initial{font-size:58px;}'
         + '#quickswitch.qs-many .qs-tile{width:150px;}'
+        + '#quickswitch .qs-splash{display:flex;flex-direction:column;align-items:center;}'
+        + '#quickswitch .qs-ring{position:relative;display:flex;align-items:center;justify-content:center;width:236px;height:236px;margin-bottom:28px;}'
+        + '#quickswitch .qs-ring:before{content:"";position:absolute;top:0;right:0;bottom:0;left:0;border-radius:50%;border:5px solid #292929;'
+        + 'border-top-color:' + ACCENT + ';-webkit-animation:qs-spin 1.1s linear infinite;animation:qs-spin 1.1s linear infinite;}'
+        + '#quickswitch .qs-ring .qs-avatar{width:196px;height:196px;}'
+        + '#quickswitch .qs-ring .qs-initial{font-size:88px;}'
+        + '#quickswitch .qs-hi{margin:0;font-size:30px;font-weight:400;color:#fff;}'
+        + '#quickswitch.qs-tv .qs-hi{font-size:36px;}'
+        + '@-webkit-keyframes qs-spin{to{-webkit-transform:rotate(360deg);}}@keyframes qs-spin{to{transform:rotate(360deg);}}'
+        + '.qs-toast{position:fixed;left:24px;bottom:24px;z-index:100001;display:flex;align-items:center;max-width:80%;padding:10px 20px 10px 10px;'
+        + 'border-radius:4px;background:#303030;color:#fff;font-size:15px;box-shadow:0 6px 18px rgba(0,0,0,.45);}'
+        + '.qs-toast.qs-plain{padding-left:20px;}'
+        + '.qs-toast .qs-mini{display:flex;flex:none;align-items:center;justify-content:center;width:32px;height:32px;margin-right:12px;border-radius:50%;'
+        + 'overflow:hidden;color:#fff;font-size:15px;font-weight:600;}'
+        + '.qs-toast .qs-mini img{width:100%;height:100%;object-fit:cover;}'
+        + '.qs-toast svg{flex:none;margin-right:12px;}'
+        + '.layout-tv .qs-toast{font-size:20px;}'
         + '@media (max-width:600px){#quickswitch .qs-row{max-width:300px;}#quickswitch .qs-tile{width:120px;margin:0 15px 26px;}'
         + '#quickswitch .qs-avatar{width:104px;height:104px;}#quickswitch .qs-initial{font-size:46px;}#quickswitch h1{font-size:26px;}'
         + '#quickswitch .qs-name{font-size:16px;}}';
@@ -284,13 +304,9 @@
         return document.documentElement.className.indexOf('layout-tv') !== -1;
     }
 
-    function tile(account, current, server) {
+    function avatarCircle(account, server, className) {
         var picture = avatar(account, server, 360);
-        var button = el('button', 'qs-tile');
-        button.type = 'button';
-        button.setAttribute('data-qs-user', account.UserId);
-        button.setAttribute('aria-label', account.Name + (current ? ', watching now' : ''));
-        var circle = el('span', 'qs-avatar');
+        var circle = el('span', className);
         circle.style.background = picture.color;
         if (picture.imageUrl) {
             var image = document.createElement('img');
@@ -300,6 +316,16 @@
         } else {
             circle.appendChild(el('span', 'qs-initial', picture.initial));
         }
+        return circle;
+    }
+
+    function tile(account, current, server) {
+        var button = el('button', 'qs-tile');
+        button.type = 'button';
+        button.setAttribute('data-qs-user', account.UserId);
+        button.setAttribute('aria-label', account.Name + (current ? ', watching now' : ''));
+        button.addEventListener('click', function () { pick(account); });
+        var circle = avatarCircle(account, server, 'qs-avatar');
         if (current) {
             var badge = el('span', 'qs-badge');
             badge.appendChild(icon('check', 22, 'rgba(0,0,0,.87)'));
@@ -392,11 +418,161 @@
         (focusFirst || add).focus();
     }
 
+    // Bottom-left notice in jellyfin-web's toast style; with an account it shows that account's avatar.
+    var toastTimer = null;
+
+    function toast(text, account, isError) {
+        var old = document.querySelector('.qs-toast');
+        if (old) {
+            old.parentNode.removeChild(old);
+        }
+        window.clearTimeout(toastTimer);
+        addStyles();
+        var box = el('div', 'qs-toast' + (account || isError ? '' : ' qs-plain'));
+        box.setAttribute('role', 'status');
+        if (isError) {
+            box.appendChild(icon('error', 22, '#ff8a80'));
+        } else if (account) {
+            box.appendChild(avatarCircle(account, serverAddress(), 'qs-mini'));
+        }
+        box.appendChild(el('span', null, text));
+        document.body.appendChild(box);
+        toastTimer = window.setTimeout(function () {
+            if (box.parentNode) {
+                box.parentNode.removeChild(box);
+            }
+        }, 4000);
+    }
+
+    function navigate(route) {
+        if (window.Dashboard && typeof window.Dashboard.navigate === 'function') {
+            window.Dashboard.navigate(route);
+        } else {
+            window.location.hash = '#/' + route;
+        }
+    }
+
+    // jellyfin-web rebuilds the home screen only when it is shown after another
+    // view, so show the preferences menu (static, no requests of its own) and go
+    // home as soon as it is up. done() runs once home is shown.
+    function showHomeAgain(done) {
+        var stage = 'via';
+        var onShow = function (event) {
+            var home = event.target && event.target.id === 'indexPage';
+            if (stage === 'via' && !home) {
+                stage = 'home';
+                navigate('home');
+            } else if (stage === 'home' && home) {
+                finish();
+            }
+        };
+        var finish = function () {
+            if (stage === 'done') {
+                return;
+            }
+            stage = 'done';
+            document.removeEventListener('viewshow', onShow);
+            done();
+        };
+        document.addEventListener('viewshow', onShow);
+        window.setTimeout(function () {
+            if (stage === 'via') {
+                stage = 'home';
+                navigate('home');
+            }
+        }, 2000);
+        window.setTimeout(finish, 6000);
+        navigate('mypreferencesmenu');
+    }
+
+    function splash(account) {
+        overlay.innerHTML = '';
+        var box = el('div', 'qs-splash');
+        var ring = el('div', 'qs-ring');
+        ring.appendChild(avatarCircle(account, serverAddress(), 'qs-avatar'));
+        box.appendChild(ring);
+        box.appendChild(el('p', 'qs-hi', 'Hi, ' + account.Name));
+        overlay.appendChild(box);
+    }
+
+    function nameOf(serverId, userId) {
+        var saved = list(serverId);
+        var at = indexOf(saved, userId);
+        return at === -1 ? '' : saved[at].Name;
+    }
+
+    // Signs jellyfin-web in as a saved account in place: never a reload, which
+    // would drop the webOS app's NativeShell.
+    var switching = false;
+
+    function pick(account) {
+        var now = signedIn();
+        if (!now || switching) {
+            return;
+        }
+        if (account.UserId === now.userId) {
+            toast('Already watching as ' + account.Name, account);
+            return;
+        }
+        var c = client();
+        if (typeof c.onAuthenticated !== 'function') {
+            toast('This version of jellyfin-web can\u2019t switch accounts in place.', null, true);
+            return;
+        }
+        switching = true;
+        var started = new Date().getTime();
+        splash(account);
+        var back = function (message) {
+            switching = false;
+            if (overlay) {
+                render();
+            }
+            toast(message, null, true);
+        };
+        request('GET', 'Users/Me', account.AccessToken, function (status, user) {
+            if (status === 0) {
+                back('Can\u2019t reach the server right now. You\u2019re still watching as ' + nameOf(now.serverId, now.userId) + '.');
+                return;
+            }
+            if (status !== 200 || !user || user.Id !== account.UserId) {
+                back(account.Name + '\u2019s saved sign-in stopped working.');
+                return;
+            }
+            var fresh = { UserId: user.Id, Name: user.Name, AccessToken: account.AccessToken, PrimaryImageTag: user.PrimaryImageTag };
+            save(now.serverId, fresh);
+            var arrived = function () {
+                var wait = Math.max(0, SPLASH_MS - (new Date().getTime() - started));
+                window.setTimeout(function () {
+                    switching = false;
+                    close();
+                    toast('Now watching as ' + fresh.Name, fresh);
+                }, wait);
+            };
+            var signIn;
+            try {
+                signIn = c.onAuthenticated(c, { User: user, AccessToken: account.AccessToken, ServerId: now.serverId });
+            } catch (e) {
+                back('Couldn\u2019t switch to ' + account.Name + '.');
+                return;
+            }
+            if (signIn && typeof signIn.then === 'function') {
+                signIn.then(function () { showHomeAgain(arrived); }, function () { back('Couldn\u2019t switch to ' + account.Name + '.'); });
+            } else {
+                showHomeAgain(arrived);
+            }
+        });
+    }
+
     function onKey(event) {
         if (!overlay) {
             return;
         }
         var code = event.keyCode;
+        if (switching) {
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+        }
         if (code === KEY.escape || code === KEY.back || code === KEY.tizenBack || code === KEY.browserBack || event.key === 'GoBack') {
             event.preventDefault();
             event.stopPropagation();
