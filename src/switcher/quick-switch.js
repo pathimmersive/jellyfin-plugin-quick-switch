@@ -21,10 +21,14 @@
         edit: 'M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z',
         close: 'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z',
         error: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z',
+        addPerson: 'M15 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm-9-2V7H4v3H1v2h3v3h2v-3h3v-2H6zm9 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z',
+        key: 'M12.65 10C11.83 7.67 9.61 6 7 6c-3.31 0-6 2.69-6 6s2.69 6 6 6c2.61 0 4.83-1.67 5.65-4H17v4h4v-4h2v-4H12.65zM7 14c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z',
+        quickConnect: 'M19 1H9c-1.1 0-2 .9-2 2v3h2V4h10v16H9v-2H7v3c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V3c0-1.1-.9-2-2-2zm-8.2 10V9.5C10.8 8.1 9.4 7 8 7S5.2 8.1 5.2 9.5V11c-.6 0-1.2.6-1.2 1.2v3.5c0 .7.6 1.3 1.2 1.3h5.5c.7 0 1.3-.6 1.3-1.2v-3.5c0-.7-.6-1.3-1.2-1.3zm-1.3 0h-3V9.5c0-.8.7-1.3 1.5-1.3s1.5.5 1.5 1.3V11z',
         switchAccount: 'M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-6 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm6 11H8v-1.5c0-1.99 4-3 6-3s6 1.01 6 3V16z'
     };
     // The splash stays up at least this long, so a fast switch doesn't flicker.
     var SPLASH_MS = 900;
+    var CREDENTIALS = 'jellyfin_credentials';
     var KEY = { escape: 27, back: 461, tizenBack: 10009, browserBack: 166, red: 403, enter: 13, space: 32 };
 
     // Saved accounts, per server, in this browser's localStorage. Only accounts
@@ -192,7 +196,11 @@
         }
         request('GET', 'Users/Me', now.token, function (status, user) {
             if (status === 200 && user && user.Id === now.userId) {
-                save(now.serverId, { UserId: user.Id, Name: user.Name, AccessToken: now.token, PrimaryImageTag: user.PrimaryImageTag });
+                var account = { UserId: user.Id, Name: user.Name, AccessToken: now.token, PrimaryImageTag: user.PrimaryImageTag };
+                save(now.serverId, account);
+                if (adding) {
+                    added(account);
+                }
             } else {
                 lastSeen = '';
             }
@@ -259,6 +267,32 @@
         + '.qs-toast .qs-mini img{width:100%;height:100%;object-fit:cover;}'
         + '.qs-toast svg{flex:none;margin-right:12px;}'
         + '.layout-tv .qs-toast{font-size:20px;}'
+        + '#quickswitch .qs-scrim{position:absolute;top:0;right:0;bottom:0;left:0;display:flex;align-items:center;justify-content:center;padding:16px;'
+        + 'background:rgba(0,0,0,.7);}'
+        + '#quickswitch .qs-dialog{display:flex;flex-direction:column;width:580px;max-width:100%;padding:36px 32px 24px;border-radius:12px;background:#202020;'
+        + 'box-shadow:0 30px 80px rgba(0,0,0,.7);text-align:center;}'
+        + '#quickswitch .qs-dialog-icon{display:flex;align-self:center;align-items:center;justify-content:center;width:64px;height:64px;margin-bottom:16px;'
+        + 'border-radius:50%;background:#292929;}'
+        + '#quickswitch .qs-dialog h2{margin:0 0 14px;font-size:28px;font-weight:600;color:#fff;}'
+        + '#quickswitch .qs-dialog p{margin:0 0 24px;font-size:17px;line-height:1.5;}'
+        + '#quickswitch .qs-card{display:flex;align-items:center;margin:0 0 14px;padding:18px 22px;border:0;border-radius:10px;background:#292929;color:#fff;'
+        + 'font:inherit;text-align:left;cursor:pointer;outline:none;transition:background .15s,box-shadow .15s;}'
+        + '#quickswitch .qs-card:focus,#quickswitch .qs-card:hover{background:#fff;color:#101010;box-shadow:0 0 0 3px #202020,0 0 0 7px ' + ACCENT + ';}'
+        + '#quickswitch .qs-card-badge{display:flex;flex:none;align-items:center;justify-content:center;width:48px;height:48px;margin-right:18px;'
+        + 'border-radius:50%;background:#383838;color:rgba(255,255,255,.87);}'
+        + '#quickswitch .qs-card:focus .qs-card-badge,#quickswitch .qs-card:hover .qs-card-badge{background:' + ACCENT + ';color:rgba(0,0,0,.87);}'
+        + '#quickswitch .qs-card-title{display:block;font-size:19px;font-weight:600;}'
+        + '#quickswitch .qs-card-sub{display:block;margin-top:3px;font-size:15px;color:rgba(255,255,255,.7);}'
+        + '#quickswitch .qs-card:focus .qs-card-sub,#quickswitch .qs-card:hover .qs-card-sub{color:#4a4a4a;}'
+        + '#quickswitch .qs-cancel{align-self:center;margin-top:6px;padding:10px 28px;border:0;border-radius:4px;background:none;color:rgba(255,255,255,.87);'
+        + 'font:inherit;font-size:17px;font-weight:600;cursor:pointer;outline:none;}'
+        + '#quickswitch .qs-cancel:focus,#quickswitch .qs-cancel:hover{background:rgba(255,255,255,.12);}'
+        + '.qs-notice-row{display:flex;justify-content:center;margin:0 0 22px;}'
+        + '.qs-notice{display:flex;align-items:center;padding:8px 16px 8px 8px;border-radius:4px;background:#202020;color:rgba(255,255,255,.87);font-size:17px;text-align:left;}'
+        + '.qs-notice .qs-mini{display:flex;flex:none;align-items:center;justify-content:center;width:30px;height:30px;margin-right:12px;border-radius:50%;'
+        + 'overflow:hidden;color:#fff;font-size:14px;font-weight:600;}'
+        + '.qs-notice .qs-mini img{width:100%;height:100%;object-fit:cover;}'
+        + '.dialog .qs-notice-row{margin:1em 0 0;}'
         + '[data-qs-entry="menu"] .MuiListItemText-primary{white-space:nowrap;}'
         + '.qs-stack{display:flex;flex:none;align-items:center;margin-left:16px;}'
         + '.qs-stack .qs-dot{display:block;width:18px;height:18px;margin-left:-6px;border-radius:50%;overflow:hidden;box-shadow:0 0 0 2px #383838;}'
@@ -275,6 +309,7 @@
         + '#quickswitch .qs-name{font-size:16px;}}';
 
     var overlay = null;
+    var mode = 'pick';
     var opener = null;
 
     function addStyles() {
@@ -355,6 +390,7 @@
         var button = el('button', 'qs-tile qs-add');
         button.type = 'button';
         button.setAttribute('data-qs-action', 'add');
+        button.addEventListener('click', showAdd);
         var circle = el('span', 'qs-avatar');
         circle.appendChild(icon('plus', 60, 'rgba(255,255,255,.7)'));
         button.appendChild(circle);
@@ -381,6 +417,7 @@
     }
 
     function render() {
+        mode = 'pick';
         var now = signedIn();
         var tv = isTv();
         var accounts = now ? list(now.serverId) : [];
@@ -428,6 +465,240 @@
             overlay.appendChild(closeButton);
         }
         (focusFirst || add).focus();
+    }
+
+    function deviceWord() {
+        return isTv() ? 'this TV' : 'this device';
+    }
+
+    function card(action, iconName, title, sub) {
+        var button = el('button', 'qs-card');
+        button.type = 'button';
+        button.setAttribute('data-qs-action', action);
+        var badge = el('span', 'qs-card-badge');
+        badge.appendChild(icon(iconName, 26));
+        button.appendChild(badge);
+        var text = el('span');
+        text.appendChild(el('span', 'qs-card-title', title));
+        text.appendChild(el('span', 'qs-card-sub', sub));
+        button.appendChild(text);
+        return button;
+    }
+
+    // The Add Account dialog, over the tiles.
+    function showAdd() {
+        if (!overlay) {
+            return;
+        }
+        mode = 'add';
+        var scrim = el('div', 'qs-scrim');
+        var dialog = el('div', 'qs-dialog');
+        dialog.setAttribute('role', 'dialog');
+        dialog.setAttribute('aria-modal', 'true');
+        dialog.setAttribute('aria-label', 'Add Account');
+        var badge = el('div', 'qs-dialog-icon');
+        badge.appendChild(icon('addPerson', 34, ACCENT));
+        dialog.appendChild(badge);
+        dialog.appendChild(el('h2', null, 'Add Account'));
+        dialog.appendChild(el('p', null, 'Everyone saved on ' + deviceWord() + ' stays saved.'));
+        var password = card('add-password', 'key', 'Sign in with a password', 'Type the user name and password');
+        password.addEventListener('click', function () { startAdd(false); });
+        dialog.appendChild(password);
+        var quick = card('add-quick-connect', 'quickConnect', 'Use Quick Connect', 'Approve a code from a phone that\u2019s signed in');
+        quick.addEventListener('click', function () { startAdd(true); });
+        dialog.appendChild(quick);
+        var cancel = el('button', 'qs-cancel', 'Cancel');
+        cancel.type = 'button';
+        cancel.setAttribute('data-qs-action', 'add-cancel');
+        cancel.addEventListener('click', hideAdd);
+        dialog.appendChild(cancel);
+        scrim.appendChild(dialog);
+        overlay.appendChild(scrim);
+        password.focus();
+    }
+
+    function hideAdd() {
+        if (overlay) {
+            render();
+            var add = overlay.querySelector('[data-qs-action="add"]');
+            if (add) {
+                add.focus();
+            }
+        }
+    }
+
+    // Adding an account signs the current one out on this device only: its
+    // token is kept in the store, never revoked, and comes back on Back.
+    var adding = null;
+
+    function startAdd(quick) {
+        var now = signedIn();
+        var saved = now ? list(now.serverId) : [];
+        var at = now ? indexOf(saved, now.userId) : -1;
+        var c = client();
+        if (at === -1 || typeof c.setAuthenticationInfo !== 'function' || typeof c.onAuthenticated !== 'function') {
+            toast('This version of jellyfin-web can\u2019t add an account here.', null, true);
+            return;
+        }
+        adding = { serverId: now.serverId, previous: saved[at], quick: quick, quickStarted: false };
+        try {
+            var credentials = JSON.parse(window.localStorage.getItem(CREDENTIALS));
+            var servers = credentials && credentials.Servers ? credentials.Servers : [];
+            for (var i = 0; i < servers.length; i++) {
+                if (servers[i].Id === now.serverId) {
+                    delete servers[i].AccessToken;
+                    delete servers[i].UserId;
+                }
+            }
+            window.localStorage.setItem(CREDENTIALS, JSON.stringify(credentials));
+        } catch (e) {
+            // jellyfin-web keeps its own copy in memory, cleared below.
+        }
+        c.setAuthenticationInfo(null, null);
+        lastSeen = '';
+        close();
+        navigate('login?serverid=' + now.serverId);
+    }
+
+    function visibleLogin() {
+        var pages = document.querySelectorAll('#loginPage');
+        for (var i = 0; i < pages.length; i++) {
+            if (pages[i].className.indexOf('hide') === -1) {
+                return pages[i];
+            }
+        }
+        return null;
+    }
+
+    function notice(account, text) {
+        var row = el('div', 'qs-notice-row');
+        row.setAttribute('data-qs-notice', '');
+        var box = el('div', 'qs-notice');
+        box.setAttribute('role', 'note');
+        box.appendChild(avatarCircle(account, serverAddress(), 'qs-mini'));
+        box.appendChild(el('span', null, text));
+        row.appendChild(box);
+        return row;
+    }
+
+    function addingText() {
+        var name = adding.previous.Name;
+        return 'Adding an account. ' + name + ' stays saved; Back returns to ' + name + '.';
+    }
+
+    // Puts the notice line on jellyfin-web's sign-in page and its Quick
+    // Connect dialog, and opens the form the chosen card asked for.
+    function decorateLogin() {
+        var page = visibleLogin();
+        if (page) {
+            var forms = page.querySelectorAll('.manualLoginForm, .visualLoginForm');
+            for (var i = 0; i < forms.length; i++) {
+                var title = forms[i].querySelector('h1');
+                if (title && !forms[i].querySelector('[data-qs-notice]')) {
+                    addStyles();
+                    var anchor = title.parentNode === forms[i] ? title : title.parentNode;
+                    forms[i].insertBefore(notice(adding.previous, addingText()), anchor.nextSibling);
+                }
+            }
+            var manual = page.querySelector('.btnManual');
+            var quick = page.querySelector('.btnQuick');
+            if (adding.quick && !adding.quickStarted && quick && quick.className.indexOf('hide') === -1) {
+                adding.quickStarted = true;
+                quick.click();
+            } else if (!adding.quick && manual && manual.className.indexOf('hide') === -1 && !adding.manualShown) {
+                adding.manualShown = true;
+                manual.click();
+            }
+        }
+        var code = document.querySelector('#quickConnectAlert .dialogContentInner');
+        if (code && !code.querySelector('[data-qs-notice]')) {
+            addStyles();
+            code.appendChild(notice(adding.previous, addingText()));
+            // The dialog keeps its text to 350px; the notice reads better on one line.
+            var content = code.parentNode;
+            if (content && content.className.indexOf('formDialogContent') !== -1) {
+                content.style.maxWidth = 'none';
+            }
+        }
+    }
+
+    function removeNotices() {
+        var notices = document.querySelectorAll('[data-qs-notice]');
+        for (var i = 0; i < notices.length; i++) {
+            notices[i].parentNode.removeChild(notices[i]);
+        }
+    }
+
+    function added(account) {
+        adding = null;
+        removeNotices();
+        toast(account.Name + ' is saved on ' + deviceWord(), account);
+    }
+
+    // Signs jellyfin-web in as user in place, then rebuilds home; never a
+    // reload, which would drop the webOS app's NativeShell.
+    function signInInPlace(user, token, serverId, done, failed) {
+        var c = client();
+        var result;
+        try {
+            result = c.onAuthenticated(c, { User: user, AccessToken: token, ServerId: serverId });
+        } catch (e) {
+            failed();
+            return;
+        }
+        if (result && typeof result.then === 'function') {
+            result.then(function () { showHomeAgain(done); }, failed);
+        } else {
+            showHomeAgain(done);
+        }
+    }
+
+    // Back on the sign-in page while adding: the previous account again, in place.
+    function cancelAdd() {
+        var previous = adding.previous;
+        var serverId = adding.serverId;
+        adding = null;
+        removeNotices();
+        request('GET', 'Users/Me', previous.AccessToken, function (status, user) {
+            if (status !== 200 || !user || user.Id !== previous.UserId) {
+                toast('Couldn\u2019t return to ' + previous.Name + '. Sign in to keep watching.', null, true);
+                return;
+            }
+            lastSeen = '';
+            signInInPlace(user, previous.AccessToken, serverId, function () {
+                toast('Now watching as ' + previous.Name, previous);
+            }, function () {
+                toast('Couldn\u2019t return to ' + previous.Name + '. Sign in to keep watching.', null, true);
+            });
+        });
+    }
+
+    function isBackKey(event) {
+        var code = event.keyCode;
+        return code === KEY.escape || code === KEY.back || code === KEY.tizenBack || code === KEY.browserBack || event.key === 'GoBack';
+    }
+
+    function onAddingKey(event) {
+        if (adding && !overlay && isBackKey(event) && visibleLogin()) {
+            event.preventDefault();
+            event.stopPropagation();
+            cancelAdd();
+        }
+    }
+
+    // The browser's own Back leaves the sign-in page with nobody signed in.
+    // The route is read as it changes: jellyfin-web sends a signed-out
+    // browser back to the sign-in page a moment later. Closing jellyfin-web's
+    // Quick Connect dialog also goes back, but stays on the sign-in route.
+    function onAddingRoute() {
+        if (!adding || /login/.test(window.location.hash)) {
+            return;
+        }
+        window.setTimeout(function () {
+            if (adding && !signedIn()) {
+                cancelAdd();
+            }
+        }, 0);
     }
 
     // Bottom-left notice in jellyfin-web's toast style; with an account it shows that account's avatar.
@@ -560,18 +831,9 @@
                     toast('Now watching as ' + fresh.Name, fresh);
                 }, wait);
             };
-            var signIn;
-            try {
-                signIn = c.onAuthenticated(c, { User: user, AccessToken: account.AccessToken, ServerId: now.serverId });
-            } catch (e) {
+            signInInPlace(user, account.AccessToken, now.serverId, arrived, function () {
                 back('Couldn\u2019t switch to ' + account.Name + '.');
-                return;
-            }
-            if (signIn && typeof signIn.then === 'function') {
-                signIn.then(function () { showHomeAgain(arrived); }, function () { back('Couldn\u2019t switch to ' + account.Name + '.'); });
-            } else {
-                showHomeAgain(arrived);
-            }
+            });
         });
     }
 
@@ -585,10 +847,14 @@
             event.stopPropagation();
             return;
         }
-        if (code === KEY.escape || code === KEY.back || code === KEY.tizenBack || code === KEY.browserBack || event.key === 'GoBack') {
+        if (isBackKey(event)) {
             event.preventDefault();
             event.stopPropagation();
-            close();
+            if (mode === 'add') {
+                hideAdd();
+            } else {
+                close();
+            }
         }
     }
 
@@ -781,6 +1047,9 @@
     }
 
     function addEntries() {
+        if (adding) {
+            decorateLogin();
+        }
         if (signedIn()) {
             addMenuItem();
             addSettingsRow();
@@ -810,6 +1079,9 @@
         });
         observer.observe(document.body, { childList: true, subtree: true });
         document.addEventListener('keydown', onRedButton, true);
+        document.addEventListener('keydown', onAddingKey, true);
+        window.addEventListener('popstate', onAddingRoute);
+        window.addEventListener('hashchange', onAddingRoute);
         addEntries();
     }
 
