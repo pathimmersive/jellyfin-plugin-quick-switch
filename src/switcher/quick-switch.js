@@ -663,6 +663,9 @@
     // again, when given, is a saved account whose sign-in stopped working:
     // the sign-in page opens for that account.
     function startAdd(quick, again) {
+        if (adding) {
+            return;
+        }
         var now = signedIn();
         var saved = now ? list(now.serverId) : [];
         var at = now ? indexOf(saved, now.userId) : -1;
@@ -688,8 +691,30 @@
         }
         c.setAuthenticationInfo(null, null);
         lastSeen = '';
-        close();
+        // The switcher stays over the page until the sign-in page shows, so
+        // the home screen isn't seen on the way.
+        adding.waiting = true;
+        var waited = adding;
+        window.setTimeout(function () {
+            if (adding === waited && adding.waiting) {
+                adding.waiting = false;
+                close(true);
+            }
+        }, 10000);
         navigate('login?serverid=' + now.serverId);
+    }
+
+    function stopWaiting() {
+        if (!adding || !adding.waiting) {
+            return;
+        }
+        var page = visibleLogin();
+        var quick = page && page.querySelector('.btnQuick');
+        var quickShown = !!quick && quick.className.indexOf('hide') === -1;
+        if (page && (!adding.quick || !quickShown || document.querySelector('#quickConnectAlert'))) {
+            adding.waiting = false;
+            close(true);
+        }
     }
 
     function visibleLogin() {
@@ -756,6 +781,7 @@
                 fillName(adding, 0);
             }
         }
+        stopWaiting();
         var code = document.querySelector('#quickConnectAlert .dialogContentInner');
         if (code && !code.querySelector('[data-qs-notice]')) {
             addStyles();
@@ -1186,6 +1212,15 @@
             event.preventDefault();
             return;
         }
+        if (adding && adding.waiting) {
+            event.preventDefault();
+            if (isBackKey(event)) {
+                adding.waiting = false;
+                close(true);
+                cancelAdd();
+            }
+            return;
+        }
         if (code === KEY.left || code === KEY.up || code === KEY.right || code === KEY.down) {
             event.preventDefault();
             moveFocus(code);
@@ -1254,7 +1289,8 @@
         render();
     }
 
-    function close() {
+    // keepFocus leaves focus where it is: on the sign-in page, jellyfin-web's.
+    function close(keepFocus) {
         if (!overlay) {
             return;
         }
@@ -1262,7 +1298,7 @@
         document.removeEventListener('keyup', onKeyUp, true);
         overlay.parentNode.removeChild(overlay);
         overlay = null;
-        if (opener && document.body.contains(opener) && typeof opener.focus === 'function') {
+        if (!keepFocus && opener && document.body.contains(opener) && typeof opener.focus === 'function') {
             opener.focus();
         }
         opener = null;
