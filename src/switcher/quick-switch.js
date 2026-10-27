@@ -108,6 +108,28 @@
         }
     }
 
+    // An add in progress clears this device's sign-in, so it is remembered
+    // here: after a restart in the middle of one, that account comes back.
+    function startAdding(serverId, userId) {
+        var value = readStore();
+        value.adding = value.adding && typeof value.adding === 'object' ? value.adding : {};
+        value.adding[serverId] = userId;
+        writeStore(value);
+    }
+
+    function addingFrom(serverId) {
+        var value = readStore();
+        return value.adding && typeof value.adding[serverId] === 'string' ? value.adding[serverId] : null;
+    }
+
+    function stopAdding(serverId) {
+        var value = readStore();
+        if (value.adding && value.adding[serverId]) {
+            delete value.adding[serverId];
+            writeStore(value);
+        }
+    }
+
     function forget(serverId, userId) {
         var value = readStore();
         var accounts = value.servers[serverId] instanceof Array ? value.servers[serverId] : [];
@@ -650,6 +672,7 @@
             return;
         }
         adding = { serverId: now.serverId, previous: saved[at], quick: quick, quickStarted: false, again: again || null };
+        startAdding(now.serverId, saved[at].UserId);
         try {
             var credentials = JSON.parse(window.localStorage.getItem(CREDENTIALS));
             var servers = credentials && credentials.Servers ? credentials.Servers : [];
@@ -778,6 +801,7 @@
 
     function added(account) {
         var again = adding.again && adding.again.UserId === account.UserId;
+        stopAdding(adding.serverId);
         adding = null;
         removeNotices();
         toast(again ? 'Now watching as ' + account.Name : account.Name + ' is saved on ' + deviceWord(), account);
@@ -807,9 +831,22 @@
         var serverId = adding.serverId;
         adding = null;
         removeNotices();
+        restore(serverId, previous);
+    }
+
+    // Signs previous back in after an add that didn't finish. An unreachable
+    // server leaves the add remembered, to try again at the next load; a
+    // rejected sign-in marks the account instead.
+    function restore(serverId, previous) {
         request('GET', 'Users/Me', previous.AccessToken, function (status, user) {
+            if (status === 0) {
+                toast('Can\u2019t reach the server right now. Sign in to keep watching.', null, true);
+                return;
+            }
+            stopAdding(serverId);
             if (status !== 200 || !user || user.Id !== previous.UserId) {
-                toast('Couldn\u2019t return to ' + previous.Name + '. Sign in to keep watching.', null, true);
+                markStale(serverId, previous.UserId);
+                toast(previous.Name + '\u2019s saved sign-in stopped working. Sign in again to keep watching.', null, true);
                 return;
             }
             lastSeen = '';
@@ -819,6 +856,32 @@
                 toast('Couldn\u2019t return to ' + previous.Name + '. Sign in to keep watching.', null, true);
             });
         });
+    }
+
+    // At load, once jellyfin-web has either signed someone in or shown its
+    // sign-in page: an add remembered from before a restart is undone, unless
+    // someone signed in meanwhile.
+    function resumeAfterRestart(tries) {
+        var c = client();
+        var serverId = c && typeof c.serverId === 'function' ? c.serverId() : null;
+        if (serverId && signedIn()) {
+            stopAdding(serverId);
+            return;
+        }
+        if (serverId && visibleLogin()) {
+            var from = addingFrom(serverId);
+            var saved = list(serverId);
+            var at = from ? indexOf(saved, from) : -1;
+            if (at === -1) {
+                stopAdding(serverId);
+            } else if (typeof c.onAuthenticated === 'function') {
+                restore(serverId, saved[at]);
+            }
+            return;
+        }
+        if (tries > 0) {
+            window.setTimeout(function () { resumeAfterRestart(tries - 1); }, 500);
+        }
     }
 
     function isBackKey(event) {
@@ -1334,6 +1397,7 @@
         });
         observer.observe(document.body, { childList: true, subtree: true });
         document.addEventListener('keydown', onRedButton, true);
+        resumeAfterRestart(60);
         document.addEventListener('keydown', onAddingKey, true);
         window.addEventListener('popstate', onAddingRoute);
         window.addEventListener('hashchange', onAddingRoute);
@@ -1344,7 +1408,7 @@
         version: VERSION,
         open: open,
         close: close,
-        store: { list: list, save: save, forget: forget, markStale: markStale },
+        store: { list: list, save: save, forget: forget, markStale: markStale, startAdding: startAdding, addingFrom: addingFrom, stopAdding: stopAdding },
         avatar: avatar
     };
 
