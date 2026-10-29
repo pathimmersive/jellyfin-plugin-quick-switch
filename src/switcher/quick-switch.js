@@ -493,7 +493,7 @@
     function render(nextMode, focusOn) {
         mode = nextMode === 'manage' ? 'manage' : 'pick';
         var managing = mode === 'manage';
-        var now = signedIn();
+        var now = returning || signedIn();
         var tv = isTv();
         var accounts = now ? list(now.serverId) : [];
         var server = serverAddress();
@@ -519,6 +519,9 @@
         var add = managing ? null : addTile();
         if (add) {
             row.appendChild(add);
+            if (focusOn === 'add') {
+                focusFirst = add;
+            }
         }
         panel.appendChild(row);
         var manage = el('button', 'qs-button');
@@ -866,20 +869,55 @@
         }
     }
 
-    // Back on the sign-in page while adding: the previous account again, in place.
+    // Back while adding: Who's watching? covers the page at once, with the
+    // previous account marked, while that account is signed in again under it.
+    var returning = null;
+
     function cancelAdd() {
         var previous = adding.previous;
         var serverId = adding.serverId;
         adding = null;
         removeNotices();
-        restore(serverId, previous);
+        var code = document.getElementById('quickConnectAlert');
+        var ok = code && code.querySelector('[data-id="ok"]');
+        if (ok) {
+            ok.click();
+        }
+        returning = { serverId: serverId, userId: previous.UserId };
+        if (overlay) {
+            render('pick', 'add');
+        } else {
+            open('add');
+        }
+        opener = null;
+        restore(serverId, previous, true);
+    }
+
+    function returned(failed) {
+        returning = null;
+        if (!overlay) {
+            return;
+        }
+        if (failed) {
+            close(true);
+            return;
+        }
+        // jellyfin-web may have focused its home screen meanwhile: that is
+        // where focus goes when the switcher closes.
+        var behind = document.activeElement;
+        opener = behind && behind !== document.body && !overlay.contains(behind) ? behind : headerTarget();
+        render('pick', 'add');
     }
 
     // Signs previous back in after an add that didn't finish. An unreachable
     // server leaves the add remembered, to try again at the next load; a
-    // rejected sign-in marks the account instead.
-    function restore(serverId, previous) {
+    // rejected sign-in marks the account instead. inSwitcher: Back opened
+    // Who's watching?, which says who is watching, so there is no toast.
+    function restore(serverId, previous, inSwitcher) {
         request('GET', 'Users/Me', previous.AccessToken, function (status, user) {
+            if (inSwitcher && (status !== 200 || !user || user.Id !== previous.UserId)) {
+                returned(true);
+            }
             if (status === 0) {
                 toast('Can\u2019t reach the server right now. Sign in to keep watching.', null, true);
                 return;
@@ -892,8 +930,15 @@
             }
             lastSeen = '';
             signInInPlace(user, previous.AccessToken, serverId, function () {
-                toast('Now watching as ' + previous.Name, previous);
+                if (inSwitcher) {
+                    returned(false);
+                } else {
+                    toast('Now watching as ' + previous.Name, previous);
+                }
             }, function () {
+                if (inSwitcher) {
+                    returned(true);
+                }
                 toast('Couldn\u2019t return to ' + previous.Name + '. Sign in to keep watching.', null, true);
             });
         });
@@ -1223,7 +1268,7 @@
             return;
         }
         event.stopPropagation();
-        if (switching) {
+        if (switching || returning) {
             event.preventDefault();
             return;
         }
@@ -1231,7 +1276,6 @@
             event.preventDefault();
             if (isBackKey(event)) {
                 adding.waiting = false;
-                close(true);
                 cancelAdd();
             }
             return;
@@ -1285,7 +1329,7 @@
         }
     }
 
-    function open() {
+    function open(focusOn) {
         if (!document.body) {
             return;
         }
@@ -1300,8 +1344,29 @@
             document.body.appendChild(overlay);
             document.addEventListener('keydown', onKey, true);
             document.addEventListener('keyup', onKeyUp, true);
+            document.addEventListener('focusin', onFocusIn, true);
         }
-        render();
+        render('pick', focusOn);
+    }
+
+    // jellyfin-web focuses a page it shows under the switcher (the home
+    // screen after a switch or a Back while adding). Focus stays in the
+    // switcher, and that element is where it goes when the switcher closes.
+    var lastFocus = null;
+
+    function onFocusIn(event) {
+        var target = event.target;
+        if (!overlay || adding || target === document.body) {
+            return;
+        }
+        if (overlay.contains(target)) {
+            lastFocus = target;
+            return;
+        }
+        opener = target;
+        if (lastFocus && overlay.contains(lastFocus)) {
+            lastFocus.focus();
+        }
     }
 
     // keepFocus leaves focus where it is: on the sign-in page, jellyfin-web's.
@@ -1311,6 +1376,8 @@
         }
         document.removeEventListener('keydown', onKey, true);
         document.removeEventListener('keyup', onKeyUp, true);
+        document.removeEventListener('focusin', onFocusIn, true);
+        lastFocus = null;
         overlay.parentNode.removeChild(overlay);
         overlay = null;
         if (!keepFocus && opener && document.body.contains(opener) && typeof opener.focus === 'function') {
