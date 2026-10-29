@@ -493,7 +493,7 @@
     function render(nextMode, focusOn) {
         mode = nextMode === 'manage' ? 'manage' : 'pick';
         var managing = mode === 'manage';
-        var now = signedIn();
+        var now = returning || signedIn();
         var tv = isTv();
         var accounts = now ? list(now.serverId) : [];
         var server = serverAddress();
@@ -502,13 +502,10 @@
         overlay.className = (tv ? 'qs-tv' : '') + (accounts.length > 4 ? ' qs-many' : '');
         overlay.innerHTML = '';
         var panel = el('div', 'qs-panel');
-        var single = accounts.length === 1 && !managing;
-        panel.appendChild(el('h1', null, managing ? 'Manage Accounts' : single ? 'Add someone to switch to' : 'Who’s watching?'));
+        panel.appendChild(el('h1', null, managing ? 'Manage Accounts' : 'Who’s watching?'));
         panel.appendChild(el('p', 'qs-sub', managing
             ? 'Choose an account to remove from ' + device
-            : single
-                ? 'Accounts you add stay on ' + device + ', so switching needs no password'
-                : 'Switch accounts on ' + device + ' without a password'));
+            : 'Select or add an account'));
         var row = el('div', 'qs-row');
         var focusFirst = null;
         for (var i = 0; i < accounts.length; i++) {
@@ -522,6 +519,9 @@
         var add = managing ? null : addTile();
         if (add) {
             row.appendChild(add);
+            if (focusOn === 'add') {
+                focusFirst = add;
+            }
         }
         panel.appendChild(row);
         var manage = el('button', 'qs-button');
@@ -663,6 +663,9 @@
     // again, when given, is a saved account whose sign-in stopped working:
     // the sign-in page opens for that account.
     function startAdd(quick, again) {
+        if (adding) {
+            return;
+        }
         var now = signedIn();
         var saved = now ? list(now.serverId) : [];
         var at = now ? indexOf(saved, now.userId) : -1;
@@ -688,8 +691,49 @@
         }
         c.setAuthenticationInfo(null, null);
         lastSeen = '';
-        close();
+        // The switcher stays over the page until the sign-in form, or the
+        // Quick Connect code, has finished drawing, so neither the home screen
+        // nor a half-drawn sign-in page is seen on the way.
+        adding.waiting = true;
+        adding.waitedFrom = new Date().getTime();
         navigate('login?serverid=' + now.serverId);
+        waitForSignIn(adding);
+    }
+
+    // jellyfin-web shows the sign-in page before it knows whether to show the
+    // form or the user list, and keeps Use Quick Connect hidden until the
+    // server answers, so this polls rather than waiting for the page itself.
+    function waitForSignIn(state) {
+        if (adding !== state || !state.waiting) {
+            return;
+        }
+        if (visibleLogin()) {
+            decorateLogin();
+        }
+        var now = new Date().getTime();
+        if (signInReady(state, now) || now - state.waitedFrom > 10000) {
+            state.waiting = false;
+            close(true);
+            return;
+        }
+        window.setTimeout(function () { waitForSignIn(state); }, 50);
+    }
+
+    function signInReady(state, now) {
+        if (state.quick) {
+            // The code, or jellyfin-web's error when Quick Connect is off,
+            // after its opening animation (280 ms at most).
+            var dialog = document.querySelector('.dialogContainer .dialog.opened');
+            if (!dialog) {
+                state.dialogSince = 0;
+                return false;
+            }
+            state.dialogSince = state.dialogSince || now;
+            return now - state.dialogSince >= 350;
+        }
+        var page = visibleLogin();
+        var form = page && page.querySelector('.manualLoginForm');
+        return !!form && form.className.indexOf('hide') === -1 && !!form.querySelector('[data-qs-notice]');
     }
 
     function visibleLogin() {
@@ -725,7 +769,7 @@
             return notice(adding.again, who + '\u2019s saved sign-in stopped working. Sign in again to keep ' + who + ' on ' + deviceWord() + '.', true);
         }
         var name = adding.previous.Name;
-        return notice(adding.previous, 'Adding an account. ' + name + ' stays saved; Back returns to ' + name + '.');
+        return notice(adding.previous, 'Adding an account. Back returns to ' + name + '.');
     }
 
     // Puts the notice line on jellyfin-web's sign-in page and its Quick
@@ -825,20 +869,55 @@
         }
     }
 
-    // Back on the sign-in page while adding: the previous account again, in place.
+    // Back while adding: Who's watching? covers the page at once, with the
+    // previous account marked, while that account is signed in again under it.
+    var returning = null;
+
     function cancelAdd() {
         var previous = adding.previous;
         var serverId = adding.serverId;
         adding = null;
         removeNotices();
-        restore(serverId, previous);
+        var code = document.getElementById('quickConnectAlert');
+        var ok = code && code.querySelector('[data-id="ok"]');
+        if (ok) {
+            ok.click();
+        }
+        returning = { serverId: serverId, userId: previous.UserId };
+        if (overlay) {
+            render('pick', 'add');
+        } else {
+            open('add');
+        }
+        opener = null;
+        restore(serverId, previous, true);
+    }
+
+    function returned(failed) {
+        returning = null;
+        if (!overlay) {
+            return;
+        }
+        if (failed) {
+            close(true);
+            return;
+        }
+        // jellyfin-web may have focused its home screen meanwhile: that is
+        // where focus goes when the switcher closes.
+        var behind = document.activeElement;
+        opener = behind && behind !== document.body && !overlay.contains(behind) ? behind : headerTarget();
+        render('pick', 'add');
     }
 
     // Signs previous back in after an add that didn't finish. An unreachable
     // server leaves the add remembered, to try again at the next load; a
-    // rejected sign-in marks the account instead.
-    function restore(serverId, previous) {
+    // rejected sign-in marks the account instead. inSwitcher: Back opened
+    // Who's watching?, which says who is watching, so there is no toast.
+    function restore(serverId, previous, inSwitcher) {
         request('GET', 'Users/Me', previous.AccessToken, function (status, user) {
+            if (inSwitcher && (status !== 200 || !user || user.Id !== previous.UserId)) {
+                returned(true);
+            }
             if (status === 0) {
                 toast('Can\u2019t reach the server right now. Sign in to keep watching.', null, true);
                 return;
@@ -851,8 +930,15 @@
             }
             lastSeen = '';
             signInInPlace(user, previous.AccessToken, serverId, function () {
-                toast('Now watching as ' + previous.Name, previous);
+                if (inSwitcher) {
+                    returned(false);
+                } else {
+                    toast('Now watching as ' + previous.Name, previous);
+                }
             }, function () {
+                if (inSwitcher) {
+                    returned(true);
+                }
                 toast('Couldn\u2019t return to ' + previous.Name + '. Sign in to keep watching.', null, true);
             });
         });
@@ -882,6 +968,67 @@
         if (tries > 0) {
             window.setTimeout(function () { resumeAfterRestart(tries - 1); }, 500);
         }
+    }
+
+    // On an LG TV the remote's keys reach the page only once something in it
+    // has focus. jellyfin-web focuses a card on a home screen with libraries;
+    // with none, nothing is focused and the remote does nothing, red button
+    // included. So at start-up in the TV layout, when a page has been showing
+    // for a few seconds with nothing focused, focus goes to the header.
+    var keyPressed = false;
+
+    function onFirstKey() {
+        keyPressed = true;
+        document.removeEventListener('keydown', onFirstKey, true);
+    }
+
+    function headerTarget() {
+        var header = document.querySelector('.skinHeader');
+        if (!header) {
+            return null;
+        }
+        var tab = header.querySelector('.emby-tab-button-active');
+        if (tab && tab.offsetWidth > 0) {
+            return tab;
+        }
+        var buttons = header.querySelectorAll('button');
+        var best = null;
+        var bestBox = null;
+        for (var i = 0; i < buttons.length; i++) {
+            var box = buttons[i].getBoundingClientRect();
+            if (box.width === 0 || buttons[i].disabled || buttons[i].className.indexOf('hide') !== -1) {
+                continue;
+            }
+            if (!best || box.top < bestBox.top - 4 || (Math.abs(box.top - bestBox.top) <= 4 && box.left < bestBox.left)) {
+                best = buttons[i];
+                bestBox = box;
+            }
+        }
+        return best;
+    }
+
+    function nothingFocused() {
+        var active = document.activeElement;
+        return !active || active === document.body || active === document.documentElement;
+    }
+
+    function focusAtStart(tries, shownFor) {
+        if (keyPressed || tries <= 0) {
+            return;
+        }
+        var page = document.querySelector('.page:not(.hide)');
+        var ready = isTv() && !overlay && !adding && signedIn() && !visibleLogin() && page;
+        shownFor = ready ? shownFor + 250 : 0;
+        if (ready && shownFor >= 2500) {
+            if (nothingFocused()) {
+                var target = headerTarget();
+                if (target) {
+                    target.focus();
+                }
+            }
+            return;
+        }
+        window.setTimeout(function () { focusAtStart(tries - 1, shownFor); }, 250);
     }
 
     function isBackKey(event) {
@@ -1121,8 +1268,16 @@
             return;
         }
         event.stopPropagation();
-        if (switching) {
+        if (switching || returning) {
             event.preventDefault();
+            return;
+        }
+        if (adding && adding.waiting) {
+            event.preventDefault();
+            if (isBackKey(event)) {
+                adding.waiting = false;
+                cancelAdd();
+            }
             return;
         }
         if (code === KEY.left || code === KEY.up || code === KEY.right || code === KEY.down) {
@@ -1174,7 +1329,7 @@
         }
     }
 
-    function open() {
+    function open(focusOn) {
         if (!document.body) {
             return;
         }
@@ -1189,19 +1344,43 @@
             document.body.appendChild(overlay);
             document.addEventListener('keydown', onKey, true);
             document.addEventListener('keyup', onKeyUp, true);
+            document.addEventListener('focusin', onFocusIn, true);
         }
-        render();
+        render('pick', focusOn);
     }
 
-    function close() {
+    // jellyfin-web focuses a page it shows under the switcher (the home
+    // screen after a switch or a Back while adding). Focus stays in the
+    // switcher, and that element is where it goes when the switcher closes.
+    var lastFocus = null;
+
+    function onFocusIn(event) {
+        var target = event.target;
+        if (!overlay || adding || target === document.body) {
+            return;
+        }
+        if (overlay.contains(target)) {
+            lastFocus = target;
+            return;
+        }
+        opener = target;
+        if (lastFocus && overlay.contains(lastFocus)) {
+            lastFocus.focus();
+        }
+    }
+
+    // keepFocus leaves focus where it is: on the sign-in page, jellyfin-web's.
+    function close(keepFocus) {
         if (!overlay) {
             return;
         }
         document.removeEventListener('keydown', onKey, true);
         document.removeEventListener('keyup', onKeyUp, true);
+        document.removeEventListener('focusin', onFocusIn, true);
+        lastFocus = null;
         overlay.parentNode.removeChild(overlay);
         overlay = null;
-        if (opener && document.body.contains(opener) && typeof opener.focus === 'function') {
+        if (!keepFocus && opener && document.body.contains(opener) && typeof opener.focus === 'function') {
             opener.focus();
         }
         opener = null;
@@ -1398,6 +1577,8 @@
         observer.observe(document.body, { childList: true, subtree: true });
         document.addEventListener('keydown', onRedButton, true);
         resumeAfterRestart(60);
+        document.addEventListener('keydown', onFirstKey, true);
+        focusAtStart(60, 0);
         document.addEventListener('keydown', onAddingKey, true);
         window.addEventListener('popstate', onAddingRoute);
         window.addEventListener('hashchange', onAddingRoute);
