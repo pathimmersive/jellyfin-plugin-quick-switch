@@ -688,30 +688,49 @@
         }
         c.setAuthenticationInfo(null, null);
         lastSeen = '';
-        // The switcher stays over the page until the sign-in page shows, so
-        // the home screen isn't seen on the way.
+        // The switcher stays over the page until the sign-in form, or the
+        // Quick Connect code, has finished drawing, so neither the home screen
+        // nor a half-drawn sign-in page is seen on the way.
         adding.waiting = true;
-        var waited = adding;
-        window.setTimeout(function () {
-            if (adding === waited && adding.waiting) {
-                adding.waiting = false;
-                close(true);
-            }
-        }, 10000);
+        adding.waitedFrom = new Date().getTime();
         navigate('login?serverid=' + now.serverId);
+        waitForSignIn(adding);
     }
 
-    function stopWaiting() {
-        if (!adding || !adding.waiting) {
+    // jellyfin-web shows the sign-in page before it knows whether to show the
+    // form or the user list, and keeps Use Quick Connect hidden until the
+    // server answers, so this polls rather than waiting for the page itself.
+    function waitForSignIn(state) {
+        if (adding !== state || !state.waiting) {
             return;
         }
-        var page = visibleLogin();
-        var quick = page && page.querySelector('.btnQuick');
-        var quickShown = !!quick && quick.className.indexOf('hide') === -1;
-        if (page && (!adding.quick || !quickShown || document.querySelector('#quickConnectAlert'))) {
-            adding.waiting = false;
-            close(true);
+        if (visibleLogin()) {
+            decorateLogin();
         }
+        var now = new Date().getTime();
+        if (signInReady(state, now) || now - state.waitedFrom > 10000) {
+            state.waiting = false;
+            close(true);
+            return;
+        }
+        window.setTimeout(function () { waitForSignIn(state); }, 50);
+    }
+
+    function signInReady(state, now) {
+        if (state.quick) {
+            // The code, or jellyfin-web's error when Quick Connect is off,
+            // after its opening animation (280 ms at most).
+            var dialog = document.querySelector('.dialogContainer .dialog.opened');
+            if (!dialog) {
+                state.dialogSince = 0;
+                return false;
+            }
+            state.dialogSince = state.dialogSince || now;
+            return now - state.dialogSince >= 350;
+        }
+        var page = visibleLogin();
+        var form = page && page.querySelector('.manualLoginForm');
+        return !!form && form.className.indexOf('hide') === -1 && !!form.querySelector('[data-qs-notice]');
     }
 
     function visibleLogin() {
@@ -747,7 +766,7 @@
             return notice(adding.again, who + '\u2019s saved sign-in stopped working. Sign in again to keep ' + who + ' on ' + deviceWord() + '.', true);
         }
         var name = adding.previous.Name;
-        return notice(adding.previous, 'Adding an account. ' + name + ' stays saved; Back returns to ' + name + '.');
+        return notice(adding.previous, 'Adding an account. Back returns to ' + name + '.');
     }
 
     // Puts the notice line on jellyfin-web's sign-in page and its Quick
@@ -778,7 +797,6 @@
                 fillName(adding, 0);
             }
         }
-        stopWaiting();
         var code = document.querySelector('#quickConnectAlert .dialogContentInner');
         if (code && !code.querySelector('[data-qs-notice]')) {
             addStyles();
