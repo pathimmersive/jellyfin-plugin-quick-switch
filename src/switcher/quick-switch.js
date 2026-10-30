@@ -319,7 +319,8 @@
         + '.qs-toast .qs-mini img{width:100%;height:100%;object-fit:cover;}'
         + '.qs-toast svg{flex:none;margin-right:12px;}'
         + '.layout-tv .qs-toast{font-size:20px;}'
-        + '#quickswitch .qs-scrim{position:absolute;top:0;right:0;bottom:0;left:0;display:flex;align-items:center;justify-content:center;padding:16px;'
+        // Above the remove buttons and labels, which sit on their own layer.
+        + '#quickswitch .qs-scrim{position:absolute;top:0;right:0;bottom:0;left:0;z-index:10;display:flex;align-items:center;justify-content:center;padding:16px;'
         + 'background:rgba(0,0,0,.7);}'
         + '#quickswitch .qs-dialog{display:flex;flex-direction:column;width:580px;max-width:100%;padding:36px 32px 24px;border-radius:12px;background:#202020;'
         + 'box-shadow:0 30px 80px rgba(0,0,0,.7);text-align:center;}'
@@ -363,8 +364,10 @@
         + '#quickswitch .qs-bin:focus{background:#fff;color:#d32f2f;box-shadow:0 0 0 4px #101010,0 0 0 8px ' + ACCENT + ';}'
         + '#quickswitch .qs-bin.qs-off{background:#1e1e1e;color:#6b6b6b;cursor:default;}'
         + '#quickswitch .qs-bin.qs-off:focus{background:#2a2a2a;box-shadow:0 0 0 4px #101010,0 0 0 7px #6b6b6b;}'
-        + '#quickswitch .qs-bin-label{position:absolute;top:-38px;left:148px;z-index:3;display:none;padding:4px 10px;border-radius:4px;background:#fff;color:#101010;'
-        + 'font-size:15px;font-weight:600;white-space:nowrap;-webkit-transform:translateX(-50%);transform:translateX(-50%);}'
+        // Ends where the remove button ends and wraps, so a long label stays
+        // within the tile's own space and never makes the panel scroll.
+        + '#quickswitch .qs-bin-label{position:absolute;right:6px;bottom:100%;z-index:3;display:none;max-width:200px;margin-bottom:8px;padding:4px 10px;'
+        + 'border-radius:4px;background:#fff;color:#101010;font-size:15px;font-weight:600;line-height:1.3;text-align:center;}'
         + '#quickswitch .qs-bin:focus+.qs-bin-label,#quickswitch .qs-bin:hover+.qs-bin-label{display:block;}'
         + '#quickswitch .qs-step{position:absolute;top:60px;z-index:2;display:none;align-items:center;justify-content:center;width:44px;height:44px;padding:0;'
         + 'border:0;border-radius:50%;background:#fff;color:#101010;cursor:pointer;outline:none;}'
@@ -377,8 +380,8 @@
         + '#quickswitch .qs-lifted .qs-name{color:#fff;font-weight:600;}'
         + '#quickswitch.qs-moving [data-qs-action="manage"]{opacity:.35;}'
         + '#quickswitch .qs-settle{-webkit-animation:qs-settle .22s ease-out;animation:qs-settle .22s ease-out;}'
+        + '#quickswitch.qs-manage .qs-row,#quickswitch.qs-tv.qs-manage .qs-row{margin-top:66px;}'
         + '#quickswitch.qs-many .qs-bin{top:-3px;left:100px;width:44px;height:44px;}'
-        + '#quickswitch.qs-many .qs-bin-label{left:122px;}'
         + '#quickswitch.qs-many .qs-step{top:44px;}'
         + '#quickswitch .qs-live{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);}'
         + '@-webkit-keyframes qs-pop{from{-webkit-transform:scale(.6);opacity:0;}}@keyframes qs-pop{from{transform:scale(.6);opacity:0;}}'
@@ -413,11 +416,11 @@
         + '#quickswitch .qs-avatar{width:104px;height:104px;}#quickswitch .qs-initial{font-size:46px;}#quickswitch h1{font-size:26px;}'
         + '#quickswitch .qs-name{font-size:16px;}#quickswitch .qs-slot{margin:0 15px 26px;}'
         // A phone has no focus to follow, so every remove button shows.
-        + '#quickswitch.qs-manage .qs-bin{display:flex;top:-7px;left:75px;width:44px;height:44px;}#quickswitch .qs-bin-label{left:97px;}'
+        + '#quickswitch.qs-manage .qs-bin{display:flex;top:-7px;left:75px;width:44px;height:44px;}#quickswitch .qs-bin-label{right:1px;max-width:140px;margin-bottom:12px;}'
         + '#quickswitch .qs-move{width:30px;height:30px;}#quickswitch .qs-step{top:30px;}'
         // Phone sizes win over the smaller tiles for more than four accounts.
         + '#quickswitch.qs-many .qs-tile{width:120px;}#quickswitch.qs-many .qs-avatar{width:104px;height:104px;}#quickswitch.qs-many .qs-initial{font-size:46px;}'
-        + '#quickswitch.qs-many.qs-manage .qs-bin{top:-7px;left:75px;}#quickswitch.qs-many .qs-bin-label{left:97px;}#quickswitch.qs-many .qs-step{top:30px;}}';
+        + '#quickswitch.qs-many.qs-manage .qs-bin{top:-7px;left:75px;}#quickswitch.qs-many .qs-step{top:30px;}}';
 
     var overlay = null;
     var mode = 'pick';
