@@ -22,6 +22,9 @@
         close: 'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z',
         error: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z',
         lock: 'M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z',
+        swap: 'M6.99 11L3 15l3.99 4v-3H14v-2H6.99v-3zM21 9l-3.99-4v3H10v2h7.01v3L21 9z',
+        chevronLeft: 'M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z',
+        chevronRight: 'M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z',
         trash: 'M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z',
         addPerson: 'M15 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm-9-2V7H4v3H1v2h3v3h2v-3h3v-2H6zm9 4c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z',
         key: 'M12.65 10C11.83 7.67 9.61 6 7 6c-3.31 0-6 2.69-6 6s2.69 6 6 6c2.61 0 4.83-1.67 5.65-4H17v4h4v-4h2v-4H12.65zM7 14c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z',
@@ -139,6 +142,20 @@
             value.servers[serverId] = accounts;
             writeStore(value);
         }
+    }
+
+    // Moves a saved account to another place in this server's order.
+    function move(serverId, userId, to) {
+        var value = readStore();
+        var accounts = value.servers[serverId] instanceof Array ? value.servers[serverId] : [];
+        var at = indexOf(accounts, userId);
+        if (at === -1) {
+            return;
+        }
+        var entry = accounts.splice(at, 1)[0];
+        accounts.splice(Math.max(0, Math.min(accounts.length, to)), 0, entry);
+        value.servers[serverId] = accounts;
+        writeStore(value);
     }
 
     // The same user id always gets the same colour.
@@ -328,8 +345,47 @@
         + '#quickswitch .qs-stale .qs-tag{color:rgba(255,255,255,.7);}'
         + '#quickswitch .qs-lock{background:#424242;}'
         + '.qs-notice .qs-mini.qs-locked{background:#333 !important;}'
-        + '#quickswitch .qs-remove{position:absolute;top:0;right:0;bottom:0;left:0;display:flex;align-items:center;justify-content:center;'
-        + 'border-radius:50%;background:rgba(0,0,0,.6);}'
+        // Manage Accounts: each tile sits in a slot with its move badge, its
+        // remove button on the circle's edge at 45 degrees, and the arrows
+        // shown while it is being moved.
+        + '#quickswitch .qs-slot{position:relative;margin:0 14px 30px;}'
+        + '#quickswitch .qs-slot .qs-tile{margin:0;}'
+        + '#quickswitch.qs-manage .qs-tile{touch-action:none;}'
+        + '#quickswitch .qs-move{position:absolute;left:2%;bottom:2%;display:flex;align-items:center;justify-content:center;width:36px;height:36px;'
+        + 'border-radius:50%;background:#303030;box-shadow:0 0 0 4px #101010;}'
+        + '#quickswitch .qs-cover{position:absolute;top:0;right:0;bottom:0;left:0;display:none;align-items:center;justify-content:center;'
+        + 'border-radius:50%;background:rgba(0,0,0,.55);}'
+        + '#quickswitch .qs-tile:focus .qs-cover,#quickswitch .qs-tile:hover .qs-cover{display:flex;}'
+        + '#quickswitch .qs-tile:focus .qs-move,#quickswitch .qs-tile:hover .qs-move{display:none;}'
+        + '#quickswitch .qs-bin{position:absolute;top:-2px;left:122px;z-index:2;display:none;align-items:center;justify-content:center;width:52px;height:52px;'
+        + 'padding:0;border:0;border-radius:50%;background:#303030;color:#fff;box-shadow:0 0 0 4px #101010;cursor:pointer;outline:none;}'
+        + '#quickswitch .qs-slot.qs-show .qs-bin,#quickswitch .qs-slot:hover .qs-bin{display:flex;-webkit-animation:qs-pop .12s ease-out;animation:qs-pop .12s ease-out;}'
+        + '#quickswitch .qs-bin:focus{background:#fff;color:#d32f2f;box-shadow:0 0 0 4px #101010,0 0 0 8px ' + ACCENT + ';}'
+        + '#quickswitch .qs-bin.qs-off{background:#1e1e1e;color:#6b6b6b;cursor:default;}'
+        + '#quickswitch .qs-bin.qs-off:focus{background:#2a2a2a;box-shadow:0 0 0 4px #101010,0 0 0 7px #6b6b6b;}'
+        + '#quickswitch .qs-bin-label{position:absolute;top:-38px;left:148px;z-index:3;display:none;padding:4px 10px;border-radius:4px;background:#fff;color:#101010;'
+        + 'font-size:15px;font-weight:600;white-space:nowrap;-webkit-transform:translateX(-50%);transform:translateX(-50%);}'
+        + '#quickswitch .qs-bin:focus+.qs-bin-label,#quickswitch .qs-bin:hover+.qs-bin-label{display:block;}'
+        + '#quickswitch .qs-step{position:absolute;top:60px;z-index:2;display:none;align-items:center;justify-content:center;width:44px;height:44px;padding:0;'
+        + 'border:0;border-radius:50%;background:#fff;color:#101010;cursor:pointer;outline:none;}'
+        + '#quickswitch .qs-step[disabled]{background:#2a2a2a;color:#555;cursor:default;}'
+        + '#quickswitch .qs-step-left{left:-14px;}#quickswitch .qs-step-right{right:-14px;}'
+        + '#quickswitch .qs-lifted .qs-step{display:flex;}'
+        + '#quickswitch .qs-lifted .qs-bin,#quickswitch .qs-lifted .qs-move,#quickswitch .qs-lifted .qs-cover{display:none !important;}'
+        + '#quickswitch .qs-lifted .qs-avatar{-webkit-transform:translateY(-14px) scale(1.14);transform:translateY(-14px) scale(1.14);'
+        + 'box-shadow:0 0 0 5px ' + ACCENT + ',0 26px 50px rgba(0,0,0,.75);}'
+        + '#quickswitch .qs-lifted .qs-name{color:#fff;font-weight:600;}'
+        + '#quickswitch.qs-moving [data-qs-action="manage"]{opacity:.35;}'
+        + '#quickswitch .qs-settle{-webkit-animation:qs-settle .22s ease-out;animation:qs-settle .22s ease-out;}'
+        + '#quickswitch.qs-many .qs-bin{top:-3px;left:100px;width:44px;height:44px;}'
+        + '#quickswitch.qs-many .qs-bin-label{left:122px;}'
+        + '#quickswitch.qs-many .qs-step{top:44px;}'
+        + '#quickswitch .qs-live{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);}'
+        + '@-webkit-keyframes qs-pop{from{-webkit-transform:scale(.6);opacity:0;}}@keyframes qs-pop{from{transform:scale(.6);opacity:0;}}'
+        + '@-webkit-keyframes qs-settle{0%{-webkit-transform:translateY(-14px) scale(1.14);}60%{-webkit-transform:scale(.96);}}'
+        + '@keyframes qs-settle{0%{transform:translateY(-14px) scale(1.14);}60%{transform:scale(.96);}}'
+        + '@media (prefers-reduced-motion:reduce){#quickswitch *{-webkit-transition:none !important;transition:none !important;'
+        + '-webkit-animation:none !important;animation:none !important;}}'
         + '#quickswitch .qs-confirm{width:560px;padding:36px 32px 28px;border-radius:4px;box-shadow:0 8px 30px rgba(0,0,0,.6);}'
         + '#quickswitch .qs-confirm .qs-avatar{align-self:center;width:96px;height:96px;margin-bottom:18px;}'
         + '#quickswitch .qs-confirm .qs-initial{font-size:44px;}'
@@ -355,7 +411,13 @@
         + '[data-qs-entry="settings"]:focus .qs-dot{box-shadow:0 0 0 2px ' + ACCENT + ';}'
         + '@media (max-width:600px){#quickswitch .qs-row{max-width:300px;}#quickswitch .qs-tile{width:120px;margin:0 15px 26px;}'
         + '#quickswitch .qs-avatar{width:104px;height:104px;}#quickswitch .qs-initial{font-size:46px;}#quickswitch h1{font-size:26px;}'
-        + '#quickswitch .qs-name{font-size:16px;}}';
+        + '#quickswitch .qs-name{font-size:16px;}#quickswitch .qs-slot{margin:0 15px 26px;}'
+        // A phone has no focus to follow, so every remove button shows.
+        + '#quickswitch.qs-manage .qs-bin{display:flex;top:-7px;left:75px;width:44px;height:44px;}#quickswitch .qs-bin-label{left:97px;}'
+        + '#quickswitch .qs-move{width:30px;height:30px;}#quickswitch .qs-step{top:30px;}'
+        // Phone sizes win over the smaller tiles for more than four accounts.
+        + '#quickswitch.qs-many .qs-tile{width:120px;}#quickswitch.qs-many .qs-avatar{width:104px;height:104px;}#quickswitch.qs-many .qs-initial{font-size:46px;}'
+        + '#quickswitch.qs-many.qs-manage .qs-bin{top:-7px;left:75px;}#quickswitch.qs-many .qs-bin-label{left:97px;}#quickswitch.qs-many .qs-step{top:30px;}}';
 
     var overlay = null;
     var mode = 'pick';
@@ -415,30 +477,41 @@
         return circle;
     }
 
-    function tile(account, current, server, managing) {
+    // movable: in Manage Accounts with more than one account saved.
+    function tile(account, current, server, managing, movable) {
         var button = el('button', 'qs-tile');
         button.type = 'button';
         button.setAttribute('data-qs-user', account.UserId);
-        var stale = !current && !managing && account.Stale;
+        var stale = !current && account.Stale;
         var tag = current ? (managing ? 'Signed in now' : 'Watching now') : stale ? 'Sign in again' : '';
         if (stale) {
             button.className += ' qs-stale';
         }
-        button.setAttribute('aria-label', account.Name + (tag ? ', ' + tag.toLowerCase() : '') + (managing && !current ? ', remove' : ''));
+        button.setAttribute('aria-label', account.Name + (tag ? ', ' + tag.toLowerCase() : '') + (movable ? ', move' : ''));
         button.addEventListener('click', function () {
             if (!managing) {
                 pick(account);
-            } else if (current) {
-                toast(account.Name + ' is signed in now, so it stays', account);
-            } else {
-                showConfirm(account);
+            } else if (Date.now() - dragEnded < 400) {
+                return;
+            } else if (moving) {
+                if (moving.userId === account.UserId) {
+                    drop();
+                }
+            } else if (movable) {
+                lift(account.UserId);
             }
         });
         var circle = avatarCircle(account, server, 'qs-avatar');
-        if (managing && !current) {
-            var cover = el('span', 'qs-remove');
-            cover.appendChild(icon('trash', 46, '#fff'));
+        if (movable) {
+            var cover = el('span', 'qs-cover');
+            cover.appendChild(icon('swap', 52, '#fff'));
             circle.appendChild(cover);
+            var mover = el('span', 'qs-move');
+            mover.appendChild(icon('swap', 20, '#fff'));
+            circle.appendChild(mover);
+            if (window.PointerEvent) {
+                button.addEventListener('pointerdown', function (event) { grab(event, account.UserId); });
+            }
         }
         if (stale) {
             var lock = el('span', 'qs-badge qs-lock');
@@ -470,51 +543,124 @@
         return button;
     }
 
-    function hints(backLabel) {
-        var box = el('div', 'qs-hints');
-        box.setAttribute('aria-hidden', 'true');
-        var ok = el('span');
-        ok.appendChild(el('span', 'qs-key', 'OK'));
-        ok.appendChild(document.createTextNode('Select'));
-        var back = el('span');
-        back.appendChild(el('span', 'qs-key', 'BACK'));
-        back.appendChild(document.createTextNode(backLabel));
-        var red = el('span');
-        red.appendChild(el('span', 'qs-red'));
-        red.appendChild(document.createTextNode('Opens this from any screen'));
-        box.appendChild(ok);
-        box.appendChild(back);
-        box.appendChild(red);
+    // In Manage Accounts a tile sits in a slot with its remove button, which
+    // shows for the focused tile, and the arrows shown while it moves.
+    function slot(button, account, current) {
+        var box = el('div', 'qs-slot');
+        box.setAttribute('data-qs-slot', account.UserId);
+        box.appendChild(button);
+        var text = current ? 'Switch accounts to remove ' + account.Name : 'Remove ' + account.Name;
+        var bin = el('button', 'qs-bin' + (current ? ' qs-off' : ''));
+        bin.type = 'button';
+        bin.setAttribute('data-qs-action', 'remove');
+        bin.setAttribute('data-qs-bin', account.UserId);
+        bin.setAttribute('aria-label', text);
+        bin.appendChild(icon('trash', 26));
+        bin.addEventListener('click', function () {
+            if (current) {
+                bin.focus();
+            } else if (!moving) {
+                showConfirm(account);
+            }
+        });
+        box.appendChild(bin);
+        var label = el('span', 'qs-bin-label', text);
+        label.setAttribute('aria-hidden', 'true');
+        box.appendChild(label);
+        box.appendChild(stepButton(-1));
+        box.appendChild(stepButton(1));
         return box;
     }
 
+    function stepButton(delta) {
+        var button = el('button', 'qs-step ' + (delta < 0 ? 'qs-step-left' : 'qs-step-right'));
+        button.type = 'button';
+        button.tabIndex = -1;
+        button.setAttribute('aria-label', delta < 0 ? 'Move left' : 'Move right');
+        button.appendChild(icon(delta < 0 ? 'chevronLeft' : 'chevronRight', 30));
+        button.addEventListener('click', function () { step(delta); });
+        return button;
+    }
+
+    // The remote's keys at the bottom right, in the TV layout. In Manage
+    // Accounts they follow the focus.
+    function hintItems() {
+        if (mode === 'move') {
+            return [[rowLength() < slotList().length ? '◀ ▶ ▲ ▼' : '◀ ▶', 'Move'], ['OK', 'Put here'], ['BACK', 'Cancel']];
+        }
+        if (mode === 'confirm') {
+            return [['OK', 'Select'], ['BACK', 'Cancel']];
+        }
+        if (mode === 'manage') {
+            var focused = document.activeElement;
+            if (focused && focused.getAttribute('data-qs-action') === 'remove') {
+                return focused.className.indexOf('qs-off') !== -1
+                    ? [['▼', 'Back to the account'], ['BACK', 'Done']]
+                    : [['OK', 'Remove'], ['▼', 'Back to the account'], ['BACK', 'Done']];
+            }
+            if (focused && focused.getAttribute('data-qs-user') && slotOf(focused) && slotList().length > 1) {
+                return [['OK', 'Move'], ['▲', 'Remove'], ['BACK', 'Done']];
+            }
+            return [['OK', 'Select'], ['BACK', 'Done']];
+        }
+        return [['OK', 'Select'], ['BACK', 'Close']];
+    }
+
+    function updateHints() {
+        var box = overlay && overlay.querySelector('.qs-hints');
+        if (!box) {
+            return;
+        }
+        box.innerHTML = '';
+        var items = hintItems();
+        for (var i = 0; i < items.length; i++) {
+            var hint = el('span');
+            hint.appendChild(el('span', 'qs-key', items[i][0]));
+            hint.appendChild(document.createTextNode(items[i][1]));
+            box.appendChild(hint);
+        }
+        if (mode === 'pick' || mode === 'add') {
+            var red = el('span');
+            red.appendChild(el('span', 'qs-red'));
+            red.appendChild(document.createTextNode('Opens this from any screen'));
+            box.appendChild(red);
+        }
+    }
+
     // nextMode is 'pick' (Who's watching?) or 'manage' (Manage Accounts);
-    // focusOn names what gets focus, a user id or 'manage'.
+    // focusOn names what gets focus: a user id, 'bin:' and a user id for
+    // that account's remove button, 'add' or 'manage'.
     function render(nextMode, focusOn) {
         mode = nextMode === 'manage' ? 'manage' : 'pick';
+        moving = null;
         var managing = mode === 'manage';
         var now = returning || signedIn();
         var tv = isTv();
         var accounts = now ? list(now.serverId) : [];
         var server = serverAddress();
-        var device = tv ? 'this TV' : 'this device';
+        var movable = managing && accounts.length > 1;
 
-        overlay.className = (tv ? 'qs-tv' : '') + (accounts.length > 4 ? ' qs-many' : '');
+        overlay.className = (tv ? 'qs-tv' : '') + (accounts.length > 4 ? ' qs-many' : '') + (managing ? ' qs-manage' : '');
         overlay.innerHTML = '';
         var panel = el('div', 'qs-panel');
         panel.appendChild(el('h1', null, managing ? 'Manage Accounts' : 'Who’s watching?'));
-        panel.appendChild(el('p', 'qs-sub', managing
-            ? 'Choose an account to remove from ' + device
-            : 'Select or add an account'));
+        panel.appendChild(el('p', 'qs-sub', !managing ? 'Select or add an account'
+            : movable ? 'Move or remove accounts'
+            : 'Only the account signed in now is saved. Add others to move or remove them here.'));
         var row = el('div', 'qs-row');
         var focusFirst = null;
+        var focusSlot = null;
         for (var i = 0; i < accounts.length; i++) {
             var current = !!now && accounts[i].UserId === now.userId;
-            var button = tile(accounts[i], current, server, managing);
-            if (focusOn ? accounts[i].UserId === focusOn : current) {
+            var button = tile(accounts[i], current, server, managing, movable);
+            var node = movable ? slot(button, accounts[i], current) : button;
+            if (focusOn === 'bin:' + accounts[i].UserId && movable) {
+                focusSlot = node;
+                focusFirst = node.querySelector('.qs-bin');
+            } else if (focusOn ? accounts[i].UserId === focusOn : current) {
                 focusFirst = button;
             }
-            row.appendChild(button);
+            row.appendChild(node);
         }
         var add = managing ? null : addTile();
         if (add) {
@@ -537,7 +683,9 @@
         overlay.appendChild(panel);
 
         if (tv) {
-            overlay.appendChild(hints(managing ? 'Done' : 'Close'));
+            var hintBox = el('div', 'qs-hints');
+            hintBox.setAttribute('aria-hidden', 'true');
+            overlay.appendChild(hintBox);
         } else {
             var closeButton = el('button', 'qs-close');
             closeButton.type = 'button';
@@ -547,7 +695,285 @@
             closeButton.addEventListener('click', close);
             overlay.appendChild(closeButton);
         }
+        var live = el('div', 'qs-live');
+        live.setAttribute('role', 'status');
+        live.setAttribute('aria-live', 'polite');
+        overlay.appendChild(live);
+        if (focusSlot) {
+            showBin(focusSlot);
+        }
         (focusFirst || add || manage).focus();
+        updateHints();
+    }
+
+    // Moving a tile in Manage Accounts: it is picked up, the arrows (or its
+    // arrow buttons, or a drag) move it while the others make room, and OK or
+    // selecting it again puts it down and saves the order. Back puts it back.
+    var moving = null;
+    var drag = null;
+    var dragEnded = 0;
+
+    function slotList() {
+        return overlay ? Array.prototype.slice.call(overlay.querySelectorAll('.qs-slot')) : [];
+    }
+
+    function slotFor(userId) {
+        var slots = slotList();
+        for (var i = 0; i < slots.length; i++) {
+            if (slots[i].getAttribute('data-qs-slot') === userId) {
+                return slots[i];
+            }
+        }
+        return null;
+    }
+
+    function slotOf(element) {
+        while (element && element !== overlay && element.getAttribute) {
+            if (element.getAttribute('data-qs-slot')) {
+                return element;
+            }
+            element = element.parentNode;
+        }
+        return null;
+    }
+
+    // How many tiles fit on one row, so Up and Down can move a tile a row.
+    function rowLength() {
+        var slots = slotList();
+        var count = 0;
+        for (var i = 0; i < slots.length; i++) {
+            if (slots[i].offsetTop === slots[0].offsetTop) {
+                count++;
+            }
+        }
+        return count || 1;
+    }
+
+    function showBin(target) {
+        var slots = slotList();
+        for (var i = 0; i < slots.length; i++) {
+            if (slots[i] === target) {
+                slots[i].classList.add('qs-show');
+            } else {
+                slots[i].classList.remove('qs-show');
+            }
+        }
+    }
+
+    function reducedMotion() {
+        return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+    }
+
+    function lift(userId) {
+        var box = slotFor(userId);
+        if (!box) {
+            return;
+        }
+        var name = box.querySelector('.qs-name').textContent;
+        moving = { userId: userId, name: name, from: slotList().indexOf(box) };
+        mode = 'move';
+        showBin(null);
+        box.classList.add('qs-lifted');
+        overlay.classList.add('qs-moving');
+        overlay.querySelector('.qs-sub').textContent = 'Moving ' + name + ': ' + (isTv()
+            ? 'Left and Right choose the place, OK puts them there'
+            : 'use the arrows, then select ' + name + ' to put them there');
+        updateSteps();
+        box.querySelector('.qs-tile').focus();
+        updateHints();
+    }
+
+    function updateSteps() {
+        var box = moving && slotFor(moving.userId);
+        if (!box) {
+            return;
+        }
+        var at = slotList().indexOf(box);
+        box.querySelector('.qs-step-left').disabled = at === 0;
+        box.querySelector('.qs-step-right').disabled = at === slotList().length - 1;
+    }
+
+    function step(delta) {
+        if (moving) {
+            moveTo(slotList().indexOf(slotFor(moving.userId)) + delta);
+        }
+    }
+
+    // Puts the moving tile at index; the tiles it passes slide to their new
+    // places from where they were.
+    function moveTo(index) {
+        var box = slotFor(moving.userId);
+        var slots = slotList();
+        var at = slots.indexOf(box);
+        if (index < 0 || index >= slots.length || index === at) {
+            return;
+        }
+        var before = [];
+        for (var i = 0; i < slots.length; i++) {
+            before.push(slots[i].getBoundingClientRect());
+        }
+        var row = box.parentNode;
+        row.removeChild(box);
+        row.insertBefore(box, slotList()[index] || null);
+        slide(slots, before);
+        box.querySelector('.qs-tile').focus();
+        updateSteps();
+    }
+
+    function slide(slots, before) {
+        if (reducedMotion()) {
+            return;
+        }
+        var moved = [];
+        for (var i = 0; i < slots.length; i++) {
+            var after = slots[i].getBoundingClientRect();
+            var dx = before[i].left - after.left;
+            var dy = before[i].top - after.top;
+            if (dx || dy) {
+                slots[i].style.transition = 'none';
+                slots[i].style.transform = 'translate(' + dx + 'px,' + dy + 'px)';
+                moved.push(slots[i]);
+            }
+        }
+        if (!moved.length) {
+            return;
+        }
+        void overlay.offsetWidth;
+        for (var j = 0; j < moved.length; j++) {
+            moved[j].style.transition = 'transform .16s ease-out';
+            moved[j].style.transform = '';
+        }
+    }
+
+    function drop() {
+        if (!moving) {
+            return;
+        }
+        var now = returning || signedIn();
+        var userId = moving.userId;
+        var name = moving.name;
+        var from = moving.from;
+        var at = slotList().indexOf(slotFor(userId));
+        if (now) {
+            move(now.serverId, userId, at);
+        }
+        render('manage', userId);
+        var box = slotFor(userId);
+        if (box) {
+            box.querySelector('.qs-avatar').classList.add('qs-settle');
+        }
+        if (at !== from) {
+            announce(name + ' moved to place ' + (at + 1) + ' of ' + slotList().length);
+        }
+    }
+
+    function cancelMove() {
+        if (moving) {
+            render('manage', moving.userId);
+        }
+    }
+
+    function announce(text) {
+        var live = overlay && overlay.querySelector('.qs-live');
+        if (live) {
+            window.setTimeout(function () { live.textContent = text; }, 100);
+        }
+    }
+
+    // A mouse or touch drag moves a tile in Manage Accounts; a press without
+    // a drag stays a click.
+    function grab(event, userId) {
+        if ((event.pointerType === 'mouse' && event.button !== 0) || (mode !== 'manage' && !(moving && moving.userId === userId))) {
+            return;
+        }
+        drag = { userId: userId, x: event.clientX, y: event.clientY, started: false };
+        document.addEventListener('pointermove', onDrag, true);
+        document.addEventListener('pointerup', onDragEnd, true);
+        document.addEventListener('pointercancel', onDragEnd, true);
+    }
+
+    function onDrag(event) {
+        if (!drag || !overlay) {
+            return;
+        }
+        if (!drag.started) {
+            if (Math.abs(event.clientX - drag.x) + Math.abs(event.clientY - drag.y) < 8) {
+                return;
+            }
+            drag.started = true;
+            if (!moving) {
+                lift(drag.userId);
+            }
+            if (!moving) {
+                return;
+            }
+            overlay.querySelector('.qs-sub').textContent = 'Drag ' + moving.name + ' to a new place and let go';
+        }
+        event.preventDefault();
+        // Layout positions, not on-screen ones: a tile still sliding to its
+        // new place would otherwise be found where it was.
+        var slots = slotList();
+        var panel = overlay.querySelector('.qs-panel');
+        var origin = overlay.getBoundingClientRect();
+        var x = event.clientX - origin.left + panel.scrollLeft;
+        var y = event.clientY - origin.top + panel.scrollTop;
+        var best = -1;
+        var bestDistance = Infinity;
+        for (var i = 0; i < slots.length; i++) {
+            var circle = slots[i].querySelector('.qs-avatar');
+            var cx = slots[i].offsetLeft + slots[i].offsetWidth / 2;
+            var cy = slots[i].offsetTop + circle.offsetTop + circle.offsetHeight / 2;
+            var distance = Math.pow(cx - x, 2) + Math.pow(cy - y, 2);
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                best = i;
+            }
+        }
+        if (best !== -1) {
+            moveTo(best);
+        }
+    }
+
+    function onDragEnd() {
+        document.removeEventListener('pointermove', onDrag, true);
+        document.removeEventListener('pointerup', onDragEnd, true);
+        document.removeEventListener('pointercancel', onDragEnd, true);
+        var started = drag && drag.started;
+        drag = null;
+        if (started && moving) {
+            dragEnded = Date.now();
+            drop();
+        }
+    }
+
+    // In Manage Accounts Up reaches the focused tile's remove button, Down
+    // returns to the tile, and Left and Right move along the remove buttons.
+    function manageArrow(code) {
+        var focused = document.activeElement;
+        var box = slotOf(focused);
+        var bin = box && box.querySelector('.qs-bin');
+        if (!bin) {
+            return false;
+        }
+        if (focused !== bin) {
+            if (code !== KEY.up) {
+                return false;
+            }
+            showBin(box);
+            bin.focus();
+            return true;
+        }
+        if (code === KEY.down) {
+            box.querySelector('.qs-tile').focus();
+        } else if (code === KEY.left || code === KEY.right) {
+            var slots = slotList();
+            var next = slots[slots.indexOf(box) + (code === KEY.left ? -1 : 1)];
+            if (next) {
+                showBin(next);
+                next.querySelector('.qs-bin').focus();
+            }
+        }
+        return true;
     }
 
     function deviceWord() {
@@ -614,7 +1040,7 @@
         var keep = el('button', 'qs-button qs-wide', 'Keep');
         keep.type = 'button';
         keep.setAttribute('data-qs-action', 'confirm-keep');
-        keep.addEventListener('click', function () { render('manage', account.UserId); });
+        keep.addEventListener('click', function () { render('manage', 'bin:' + account.UserId); });
         var remove = el('button', 'qs-button qs-wide', 'Remove');
         remove.type = 'button';
         remove.setAttribute('data-qs-action', 'confirm-remove');
@@ -638,9 +1064,14 @@
         removing = true;
         request('POST', 'Sessions/Logout', account.AccessToken, function () {
             removing = false;
+            // Focus moves to the account that takes the removed one's place.
+            var saved = list(now.serverId);
+            var at = indexOf(saved, account.UserId);
             forget(now.serverId, account.UserId);
+            saved = list(now.serverId);
+            var next = saved[Math.min(at, saved.length - 1)];
             if (overlay) {
-                render('manage', 'manage');
+                render('manage', next ? next.UserId : 'manage');
             }
             toast(account.Name + ' removed from ' + deviceWord());
         });
@@ -1280,9 +1711,25 @@
             }
             return;
         }
-        if (code === KEY.left || code === KEY.up || code === KEY.right || code === KEY.down) {
+        var arrow = code === KEY.left || code === KEY.up || code === KEY.right || code === KEY.down;
+        if (mode === 'move') {
             event.preventDefault();
-            moveFocus(code);
+            if (code === KEY.left || code === KEY.right) {
+                step(code === KEY.left ? -1 : 1);
+            } else if (code === KEY.up || code === KEY.down) {
+                step((code === KEY.up ? -1 : 1) * rowLength());
+            } else if (code === KEY.enter) {
+                drop();
+            } else if (isBackKey(event)) {
+                cancelMove();
+            }
+            return;
+        }
+        if (arrow) {
+            event.preventDefault();
+            if (!(mode === 'manage' && manageArrow(code))) {
+                moveFocus(code);
+            }
             return;
         }
         if (code === KEY.tab) {
@@ -1361,6 +1808,10 @@
         }
         if (overlay.contains(target)) {
             lastFocus = target;
+            if (mode === 'manage') {
+                showBin(slotOf(target));
+            }
+            updateHints();
             return;
         }
         opener = target;
@@ -1377,6 +1828,8 @@
         document.removeEventListener('keydown', onKey, true);
         document.removeEventListener('keyup', onKeyUp, true);
         document.removeEventListener('focusin', onFocusIn, true);
+        moving = null;
+        onDragEnd();
         lastFocus = null;
         overlay.parentNode.removeChild(overlay);
         overlay = null;
@@ -1589,7 +2042,7 @@
         version: VERSION,
         open: open,
         close: close,
-        store: { list: list, save: save, forget: forget, markStale: markStale, startAdding: startAdding, addingFrom: addingFrom, stopAdding: stopAdding },
+        store: { list: list, save: save, forget: forget, move: move, markStale: markStale, startAdding: startAdding, addingFrom: addingFrom, stopAdding: stopAdding },
         avatar: avatar
     };
 
