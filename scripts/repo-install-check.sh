@@ -1,13 +1,18 @@
 #!/usr/bin/env bash
-# Proves a Jellyfin server accepts the release zip and manifest.json: packages the
-# plugin, serves the zip and manifest from a local web container, adds that URL as
-# a plugin repository on a local Jellyfin, installs the plugin through the API,
-# restarts the server and checks the plugin is active and serves the switcher.
+# Proves a Jellyfin server installs the plugin the way an admin does: packages the
+# plugin, serves the zip and manifest.json from a local web container, adds that URL
+# and File Transformation's own plugin repository on a local Jellyfin, installs both
+# through the API, restarts the server, and checks both plugins are active, the
+# switcher is served, and index.html loads it.
 #
-# Usage: scripts/repo-install-check.sh [--corrupt-zip]
-#   --corrupt-zip  change the zip after its checksum is computed; the install must fail
+# Usage: scripts/repo-install-check.sh [--upgrade] [--corrupt-zip]
+#   --upgrade      also package a newer version, install it over the first from the
+#                  same repository, and check only the newer one is active
+#   --corrupt-zip  change a zip after its checksum is computed (the newer one with
+#                  --upgrade); its install must fail
 #
-# Needs: bash, curl, docker, the .NET 10 SDK.
+# Needs: bash, curl, docker, the .NET 10 SDK, and access to File Transformation's
+# repository and GitHub releases.
 # Environment:
 #   JELLYFIN_IMAGE  image to run (default: the one scripts/smoke-test.sh pins)
 #   CHECK_TIMEOUT   seconds to wait for each step (default 180)
@@ -19,16 +24,28 @@ cd "$repo_root"
 image="${JELLYFIN_IMAGE:-jellyfin/jellyfin:12.2.20261005-225228}"
 timeout="${CHECK_TIMEOUT:-180}"
 corrupt=0
-case "${1:-}" in
-  "") ;;
-  --corrupt-zip) corrupt=1 ;;
-  *) echo "unknown argument: $1" >&2; exit 2 ;;
-esac
+upgrade=0
+for arg in "$@"; do
+  case "$arg" in
+    --corrupt-zip) corrupt=1 ;;
+    --upgrade) upgrade=1 ;;
+    *) echo "unknown argument: $arg" >&2; exit 2 ;;
+  esac
+done
+
+# File Transformation, from the repository its publisher tells admins to add. The
+# version is the one scripts/smoke-test.sh pins for this server version.
+ft_repo_url="https://www.iamparadox.dev/jellyfin/plugins/manifest.json"
+ft_name="File Transformation"
+ft_guid="5e87cc92-571a-4d8d-8d98-d2d4147f9f90"
+ft_version="3.0.2.0"
 
 meta="$(bash scripts/plugin-meta.sh)"
 plugin_name="$(sed -n 's/.*"name": *"\([^"]*\)".*/\1/p' "$meta")"
 plugin_guid="$(sed -n 's/.*"guid": *"\([^"]*\)".*/\1/p' "$meta")"
 version="$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$meta")"
+# The newer version for --upgrade: the same build with its last part raised.
+next="${version%.*}.$(( ${version##*.} + 1 ))"
 script_path="QuickSwitch/quick-switch.js"
 
 suffix="$$"
@@ -38,8 +55,10 @@ server_container="quick-switch-server-$suffix"
 repo_host="quick-switch-repo"
 repo_url="http://$repo_host/manifest.json"
 out_dir="artifacts/repo-check"
+served="$(mktemp)"
 
 cleanup() {
+  rm -f "$served"
   docker rm -f "$server_container" "$repo_container" >/dev/null 2>&1 || true
   docker network rm "$network" >/dev/null 2>&1 || true
 }
@@ -50,13 +69,16 @@ fail() {
   exit 1
 }
 
-echo "== package $version"
 rm -rf "$out_dir"
-bash scripts/package.sh "$version" "$out_dir" "http://$repo_host" "Local repository check"
-zip_path="$out_dir/quick-switch_${version}.zip"
+versions=("$version")
+[[ $upgrade -eq 1 ]] && versions+=("$next")
+for v in "${versions[@]}"; do
+  echo "== package $v"
+  bash scripts/package.sh "$v" "$out_dir" "http://$repo_host" "Local repository check"
+done
 if [[ $corrupt -eq 1 ]]; then
-  echo "== corrupt the zip after its checksum was computed"
-  printf 'corrupted' >>"$zip_path"
+  echo "== corrupt the $plugin_name ${versions[-1]} zip after its checksum was computed"
+  printf 'corrupted' >>"$out_dir/quick-switch_${versions[-1]}.zip"
 fi
 bash scripts/build-manifest.sh "$out_dir/manifest.json" --entries "$out_dir"
 
@@ -64,15 +86,23 @@ echo "== serve the repository"
 docker network create "$network" >/dev/null
 docker create --name "$repo_container" --network "$network" --network-alias "$repo_host" nginx:alpine >/dev/null
 docker cp "$out_dir/manifest.json" "$repo_container:/usr/share/nginx/html/manifest.json"
-docker cp "$zip_path" "$repo_container:/usr/share/nginx/html/"
+for v in "${versions[@]}"; do
+  docker cp "$out_dir/quick-switch_$v.zip" "$repo_container:/usr/share/nginx/html/"
+done
 docker start "$repo_container" >/dev/null
 
 echo "== start $image"
 docker pull --quiet "$image" >/dev/null
 docker create --name "$server_container" --network "$network" -p 127.0.0.1::8096 "$image" >/dev/null
 docker start "$server_container" >/dev/null
-port="$(docker port "$server_container" 8096/tcp | head -n 1 | sed 's/.*://')"
-api="http://127.0.0.1:$port"
+
+# The server is published on a new host port each time it starts.
+find_api() {
+  local port
+  port="$(docker port "$server_container" 8096/tcp | head -n 1 | sed 's/.*://')"
+  api="http://127.0.0.1:$port"
+}
+find_api
 
 # Waits until the server log matches a pattern; fails on timeout or container exit.
 wait_for_log() {
@@ -104,6 +134,57 @@ call() {
   fi
 }
 
+# Installs a package from a repository the way Dashboard → Plugins does, and waits
+# for its files; fails as soon as the server reports a failed install.
+install() {
+  local name="$1" guid="$2" v="$3" from="$4" dll="$5" deadline
+  echo "== install $name $v from $from"
+  call POST "/Packages/Installed/${name// /%20}?assemblyGuid=$guid&version=$v&repositoryUrl=$from"
+  deadline=$((SECONDS + timeout))
+  while true; do
+    if docker logs "$server_container" 2>&1 | grep -iE "checksum|installation.*fail|failed.*install" >&2; then
+      fail "the server refused to install $name $v"
+    fi
+    if docker exec "$server_container" sh -c "ls /config/plugins/*_$v/$dll" >/dev/null 2>&1; then
+      return 0
+    fi
+    (( SECONDS < deadline )) || fail "timed out waiting for the install of $name $v"
+    sleep 2
+  done
+}
+
+# Restarts the server and checks what loaded: the plugin at version v and File
+# Transformation active, the switcher served, and index.html loading version v.
+restart_and_check() {
+  local v="$1" plugins entries entry page
+  echo "== restart and wait for $plugin_name $v to load"
+  docker restart "$server_container" >/dev/null
+  wait_for_log "Loaded plugin: \"?${plugin_name}\"? \"?${v}\"?"
+  wait_for_log "Loaded plugin: \"?${ft_name}\"? \"?${ft_version}\"?"
+  find_api
+  local deadline=$((SECONDS + timeout))
+  until curl -sf "$api/System/Info/Public" >/dev/null 2>&1; do
+    (( SECONDS < deadline )) || fail "the server did not answer after the restart"
+    sleep 2
+  done
+
+  plugins="$(call GET /Plugins)"
+  entries="$(sed 's/},{/}\n{/g' <<<"$plugins")"
+  entry="$(grep "\"Name\":\"$ft_name\"" <<<"$entries" || true)"
+  grep -q '"Status":"Active"' <<<"$entry" || fail "$ft_name is not Active: ${entry:-not listed}"
+  entry="$(grep "\"Name\":\"$plugin_name\"" <<<"$entries" | grep '"Status":"Active"' || true)"
+  [[ "$(grep -c . <<<"$entry")" -eq 1 ]] || fail "expected one Active $plugin_name, /Plugins lists: $(grep "\"Name\":\"$plugin_name\"" <<<"$entries" || echo none)"
+  grep -q "\"Version\":\"$v\"" <<<"$entry" || fail "the Active $plugin_name is not version $v: $entry"
+
+  curl -sSf -o "$served" "$api/$script_path" || fail "GET /$script_path failed"
+  cmp -s "$served" src/switcher/quick-switch.js || fail "GET /$script_path is not src/switcher/quick-switch.js"
+
+  page="$(curl -sSf "$api/web/index.html")" || fail "GET /web/index.html failed"
+  grep -qF "<script src=\"../$script_path?v=$v\"></script>" <<<"$page" \
+    || fail "index.html does not load $script_path?v=$v; it has: $(grep -o '<script src="[^"]*QuickSwitch[^"]*"' <<<"$page" || echo 'no switcher tag')"
+  echo "PASS: $plugin_name $v and $ft_name $ft_version are Active, the switcher is served, and index.html loads it as ?v=$v"
+}
+
 wait_for_log "Startup complete"
 server_version="$(docker logs "$server_container" 2>&1 | sed -n 's/.*Jellyfin version: \([0-9.]*\).*/\1/p' | head -n 1)"
 
@@ -117,49 +198,19 @@ token="$(call POST /Users/AuthenticateByName '{"Username":"check","Pw":"check-pa
   sed -n 's/.*"AccessToken":"\([^"]*\)".*/\1/p')"
 [[ -n "$token" ]] || fail "could not sign in to the server"
 
-echo "== add the repository and install $plugin_name $version"
-call POST /Repositories "[{\"Name\":\"Quick Switch check\",\"Url\":\"$repo_url\",\"Enabled\":true}]"
+echo "== add the repositories"
+call POST /Repositories "[{\"Name\":\"$ft_name\",\"Url\":\"$ft_repo_url\",\"Enabled\":true},{\"Name\":\"Quick Switch check\",\"Url\":\"$repo_url\",\"Enabled\":true}]"
 packages="$(call GET /Packages)"
 grep -q "\"name\":\"$plugin_name\"" <<<"$packages" || fail "the server does not list $plugin_name from $repo_url"
-encoded_name="${plugin_name// /%20}"
-call POST "/Packages/Installed/$encoded_name?assemblyGuid=$plugin_guid&version=$version&repositoryUrl=$repo_url"
+grep -q "\"name\":\"$ft_name\"" <<<"$packages" || fail "the server does not list $ft_name from $ft_repo_url"
 
-deadline=$((SECONDS + timeout))
-while true; do
-  if docker logs "$server_container" 2>&1 | grep -iE "checksum|installation.*fail|failed.*install" >&2; then
-    fail "the server refused to install $plugin_name $version"
-  fi
-  if docker exec "$server_container" sh -c "ls /config/plugins/*/Jellyfin.Plugin.QuickSwitch.dll" >/dev/null 2>&1; then
-    break
-  fi
-  (( SECONDS < deadline )) || fail "timed out waiting for the install of $plugin_name $version"
-  sleep 2
-done
+install "$ft_name" "$ft_guid" "$ft_version" "$ft_repo_url" Jellyfin.Plugin.FileTransformation.dll
+install "$plugin_name" "$plugin_guid" "$version" "$repo_url" Jellyfin.Plugin.QuickSwitch.dll
+restart_and_check "$version"
 
-echo "== restart and wait for the plugin to load"
-docker restart "$server_container" >/dev/null
-loaded_pattern="Loaded plugin: \"?${plugin_name}\"? \"?${version}\"?"
-wait_for_log "$loaded_pattern"
-docker logs "$server_container" 2>&1 | grep -E "$loaded_pattern"
+if [[ $upgrade -eq 1 ]]; then
+  install "$plugin_name" "$plugin_guid" "$next" "$repo_url" Jellyfin.Plugin.QuickSwitch.dll
+  restart_and_check "$next"
+fi
 
-# The restart publishes the server on a new host port.
-port="$(docker port "$server_container" 8096/tcp | head -n 1 | sed 's/.*://')"
-api="http://127.0.0.1:$port"
-deadline=$((SECONDS + timeout))
-until curl -sf "$api/System/Info/Public" >/dev/null 2>&1; do
-  (( SECONDS < deadline )) || fail "the server did not answer after the restart"
-  sleep 2
-done
-
-plugins="$(call GET /Plugins)"
-entry="$(sed 's/},{/}\n{/g' <<<"$plugins" | grep "\"Name\":\"$plugin_name\"" || true)"
-[[ -n "$entry" ]] || fail "$plugin_name is not listed by /Plugins"
-grep -q "\"Version\":\"$version\"" <<<"$entry" || fail "/Plugins lists $plugin_name, but not version $version"
-grep -q '"Status":"Active"' <<<"$entry" || fail "$plugin_name is not Active: $entry"
-
-served="$(mktemp)"
-trap 'rm -f "$served"; cleanup' EXIT
-curl -sSf -o "$served" "$api/$script_path" || fail "GET /$script_path failed"
-cmp -s "$served" src/switcher/quick-switch.js || fail "GET /$script_path is not src/switcher/quick-switch.js"
-
-echo "PASS: $image (Jellyfin ${server_version:-unknown}) installed $plugin_name $version from the repository; it is Active and serves the switcher"
+echo "PASS: $image (Jellyfin ${server_version:-unknown}) installed $plugin_name ${versions[*]} and $ft_name $ft_version from their repositories"
