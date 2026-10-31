@@ -47,6 +47,7 @@ function wrap(quickSwitch) {
             list: (serverId) => plain(quickSwitch.store.list(serverId)),
             save: quickSwitch.store.save,
             forget: quickSwitch.store.forget,
+            move: quickSwitch.store.move,
             markStale: quickSwitch.store.markStale,
             startAdding: quickSwitch.store.startAdding,
             addingFrom: quickSwitch.store.addingFrom,
@@ -81,6 +82,27 @@ test('a new sign-in by a saved account replaces its token in place', () => {
     store.save('s', { UserId: 'a', Name: 'Al', AccessToken: 'new' })
 
     assert.deepEqual(store.list('s').map((a) => [a.UserId, a.AccessToken]), [['a', 'new'], ['b', 'tb']])
+})
+
+test('moves an account to another place in its server’s order only', () => {
+    const { store } = withStore()
+    for (const id of ['a', 'b', 'c', 'd']) { store.save('s', { UserId: id, Name: id, AccessToken: 't' + id }) }
+    store.save('other', { UserId: 'a', Name: 'a', AccessToken: 'x' })
+    store.save('other', { UserId: 'b', Name: 'b', AccessToken: 'y' })
+
+    store.move('s', 'b', 3)
+    assert.deepEqual(store.list('s').map((a) => a.UserId), ['a', 'c', 'd', 'b'])
+    store.move('s', 'd', 0)
+    assert.deepEqual(store.list('s').map((a) => a.UserId), ['d', 'a', 'c', 'b'])
+    store.move('s', 'c', 99)
+    store.move('s', 'nobody', 0)
+    assert.deepEqual(store.list('s').map((a) => a.UserId), ['d', 'a', 'b', 'c'])
+    assert.deepEqual(store.list('other').map((a) => a.UserId), ['a', 'b'])
+
+    // A new sign-in keeps the account's place, and a new account goes to the end.
+    store.save('s', { UserId: 'a', Name: 'a', AccessToken: 'new' })
+    store.save('s', { UserId: 'e', Name: 'e', AccessToken: 'te' })
+    assert.deepEqual(store.list('s').map((a) => [a.UserId, a.AccessToken]), [['d', 'td'], ['a', 'new'], ['b', 'tb'], ['c', 'tc'], ['e', 'te']])
 })
 
 test('ignores an account without a user id or token, and forgets one by id', () => {
