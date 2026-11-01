@@ -16,6 +16,10 @@
     <PackageReference Include="Jellyfin.Controller" Version="$(JellyfinVersion)" ExcludeAssets="runtime" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Jellyfin.Plugin.QuickSwitch.Tests" />
+  </ItemGroup>
+
   <!-- The switcher script runs in jellyfin-web and is served from the plugin at /QuickSwitch/quick-switch.js.
        Override with -p:SwitcherScriptPath=<file> to build with a different script for local testing. -->
   <PropertyGroup>

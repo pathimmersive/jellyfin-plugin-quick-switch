@@ -14,4 +14,4 @@ Quick Switch has no release yet. Fixes go into `main`; once releases exist, the 
 
 Quick Switch keeps Jellyfin access tokens for the accounts saved on a device, in that device's browser storage. In scope: a token reaching anyone other than a user of that device, a switch to an account that was never saved on the device, a token surviving removal from the switcher, and the plugin revoking or altering accounts it should not touch.
 
-By design, anyone using a device can switch to any account saved on it without a password; that is not a vulnerability. Problems in Jellyfin itself, or in the File Transformation plugin, belong with those projects.
+By design, anyone using a device can switch to any account saved on it without a password; that is not a vulnerability. Problems in Jellyfin itself, or in other plugins, belong with those projects.

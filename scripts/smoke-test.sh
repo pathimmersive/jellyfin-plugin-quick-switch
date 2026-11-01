@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Smoke test: build the plugin, load it into a real Jellyfin 12.x container,
-# and check what the server reports and serves, without File Transformation,
-# with it, and under a BaseUrl. Exits non-zero on the first failed check and
+# and check what the server reports and serves: on its own, with the File
+# Transformation plugin installed alongside, and under a BaseUrl. Exits non-zero on the first failed check and
 # always removes the container.
 #
 # Needs: bash, curl, docker, unzip, md5sum, the .NET 10 SDK.
@@ -17,8 +17,9 @@ ADMIN_PW="smoke-$RANDOM$RANDOM"
 CLIENT_HEADER='MediaBrowser Client="quickswitch-smoke", Device="smoke", DeviceId="quickswitch-smoke", Version="1.0.0"'
 SCRIPT_PATH="QuickSwitch/quick-switch.js"
 
-# The pinned File Transformation release, built for the image's server version.
-# The MD5 is the one in its publisher's plugin repository manifest.
+# File Transformation is not needed; admins may have it for other plugins, so one
+# case runs with it installed alongside. The pinned release is built for the
+# image's server version, and the MD5 is the one in its publisher's manifest.
 FT_VERSION="3.0.2.0"
 FT_SERVER_VERSION="12.2.0"
 FT_URL="https://github.com/IAmParadox27/jellyfin-plugin-file-transformation/releases/download/$FT_VERSION/Release-$FT_SERVER_VERSION.zip"
@@ -148,41 +149,62 @@ check_script_served() {
     pass "anonymous GET $prefix/$SCRIPT_PATH serves src/switcher/quick-switch.js as text/javascript, no-cache, with an ETag that gets 304"
 }
 
-check_web_stock() {
-    local prefix="$1"
-    curl -sf -o "$work/served" "$prefix/web/index.html" || fail "GET $prefix/web/index.html"
-    MSYS_NO_PATHCONV=1 docker exec "$container" cat /jellyfin/jellyfin-web/index.html > "$work/stock" || fail "read the stock index.html"
-    cmp -s "$work/served" "$work/stock" || fail "$prefix/web/index.html differs from the stock file without File Transformation"
-    pass "without File Transformation, $prefix/web/index.html is byte-for-byte the stock file"
-}
+TAG_PATTERN='<script src="../QuickSwitch/quick-switch.js[^"]*"></script>'
 
-check_web_patched() {
-    local prefix="$1"
+# The served index page carries exactly one switcher tag, for this version, right before </head>.
+check_web_changed() {
+    local prefix="$1" label="$2"
     curl -sf -o "$work/served" "$prefix/web/index.html" || fail "GET $prefix/web/index.html"
     local tag="<script src=\"../QuickSwitch/quick-switch.js?v=$PLUGIN_VERSION\"></script>"
-    count="$(grep -o '<script src="../QuickSwitch/quick-switch.js[^"]*"></script>' "$work/served" | wc -l | tr -d ' ')"
-    [ "$count" = "1" ] || fail "$prefix/web/index.html carries $count switcher script tags, expected 1"
-    grep -q -F "$tag</head>" "$work/served" || fail "$prefix/web/index.html does not carry $tag right before </head>"
-    pass "with File Transformation, $prefix/web/index.html carries one switcher tag for version $PLUGIN_VERSION before </head>"
+    count="$(grep -o "$TAG_PATTERN" "$work/served" | wc -l | tr -d ' ')"
+    [ "$count" = "1" ] || fail "$label: $prefix/web/index.html carries $count switcher script tags, expected 1"
+    grep -q -F "$tag</head>" "$work/served" || fail "$label: $prefix/web/index.html does not carry $tag right before </head>"
+    pass "$label: $prefix/web/index.html carries one switcher tag for version $PLUGIN_VERSION before </head>"
 }
 
-# Without File Transformation: the plugin loads, serves its script, and leaves jellyfin-web alone.
+# How the changed page is sent: plain to a client that asks for compression, a
+# Content-Length that matches, HEAD as GET, an ETag of its own that gets 304, and
+# jellyfin-web's file on disk untouched.
+check_web_http() {
+    local prefix="$1" url="$1/web/index.html"
+    curl -sf -D "$work/get-headers" -o "$work/get" "$url" || fail "GET $url"
+    header() { grep -i "^$1:" "$2" | sed 's/^[^:]*: *//' | tr -d '\r'; }
+    [ "$(header content-length "$work/get-headers")" = "$(wc -c < "$work/get" | tr -d ' ')" ] \
+        || fail "GET $url: Content-Length $(header content-length "$work/get-headers") does not match the $(wc -c < "$work/get" | tr -d ' ')-byte body"
+    curl -sf --compressed -H 'Accept-Encoding: gzip, br' -o "$work/compressed" "$url" || fail "GET $url accepting gzip and br"
+    grep -q "$TAG_PATTERN" "$work/compressed" || fail "GET $url accepting gzip and br has no switcher tag"
+    curl -sf -I -o /dev/null -D "$work/head-headers" "$url" || fail "HEAD $url"
+    [ "$(header content-length "$work/head-headers")" = "$(header content-length "$work/get-headers")" ] \
+        || fail "HEAD $url answers Content-Length $(header content-length "$work/head-headers"), GET $(header content-length "$work/get-headers")"
+    etag="$(header etag "$work/get-headers")"
+    [ -n "$etag" ] && [ "$(header etag "$work/head-headers")" = "$etag" ] \
+        || fail "HEAD $url answers ETag '$(header etag "$work/head-headers")', GET '$etag'"
+    rm -f "$work/not-modified"
+    code="$(curl -s -o "$work/not-modified" -w '%{http_code}' -H "If-None-Match: $etag" "$url")"
+    [ "$code" = "304" ] && [ ! -s "$work/not-modified" ] || fail "GET $url with its ETag returned $code, expected an empty 304"
+    MSYS_NO_PATHCONV=1 docker exec "$container" cat /jellyfin/jellyfin-web/index.html > "$work/stock" || fail "read the stock index.html"
+    ! grep -q "$TAG_PATTERN" "$work/stock" || fail "jellyfin-web's index.html on disk carries the switcher tag"
+    pass "$url is sent plain when compression is accepted, with a matching Content-Length, HEAD headers equal to GET's, an ETag that gets 304, and the file on disk stock"
+}
+
+# On its own: the plugin loads, serves its script, and adds it to jellyfin-web.
 check_plugin_active "$base" "$PLUGIN_NAME"
 check_no_create_error
+grep -q 'Account switcher added to jellyfin-web' "$work/server.log" \
+    || fail "the plugin did not log that it adds the switcher to jellyfin-web"
+pass "the plugin logs that it adds the switcher to jellyfin-web"
 check_script_served "$base"
-check_web_stock "$base"
-grep -q 'File Transformation 3.x is not installed' "$work/server.log" \
-    || fail "without File Transformation the plugin did not log that the switcher is not added"
-pass "without File Transformation the plugin logs that the switcher is not added"
+check_web_changed "$base" "on its own"
+check_web_http "$base"
 
-# With File Transformation.
+# With File Transformation installed alongside, for another plugin.
 MSYS_NO_PATHCONV=1 docker exec "$container" cp -r /quickswitch-ft "/config/plugins/FileTransformation_$FT_VERSION" || fail "install File Transformation"
 restart ""
 base="$(base_url "")"
 check_plugin_active "$base" "File Transformation"
 check_plugin_active "$base" "$PLUGIN_NAME"
 check_no_create_error
-check_web_patched "$base"
+check_web_changed "$base" "with File Transformation alongside"
 
 # Under a BaseUrl.
 code="$(get_status -H "Authorization: $token_header" "$base/System/Configuration/network")"
@@ -194,6 +216,7 @@ curl -sf -X POST -H 'Content-Type: application/json' -H "Authorization: $token_h
 restart "/jf"
 base="$(base_url "/jf")"
 check_script_served "$base"
-check_web_patched "$base"
+check_web_changed "$base" "under BaseUrl /jf"
+check_web_http "$base"
 
 echo "smoke-test: all checks passed"
