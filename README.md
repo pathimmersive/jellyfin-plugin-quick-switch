@@ -6,7 +6,7 @@ Quick Switch is a Jellyfin server plugin that adds fast switching between Jellyf
 
 ## Status
 
-Early development; there is no release yet and the switcher is not usable. The plugin builds, loads its script into jellyfin-web through File Transformation, and does nothing else so far.
+Early development; there is no release yet and the switcher is not usable. The plugin builds, adds its script to jellyfin-web as the page is served, and does nothing else so far.
 
 ## How it will work
 
@@ -36,7 +36,7 @@ Quick Switch runs in clients that load jellyfin-web from your server: web browse
 ## Requirements
 
 - Jellyfin 12.0 or later. The build targets 12.2.
-- The [File Transformation](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) plugin, 3.x, which lets plugins add to jellyfin-web as it is served.
+- No other plugins. Quick Switch adds its script to jellyfin-web as the page is served and never changes jellyfin-web's files. It also works alongside the [File Transformation](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) plugin, which other plugins use.
 
 ## Building and testing
 
@@ -48,7 +48,7 @@ node --test "tests/switcher/*.test.js" # switcher script tests
 bash scripts/check-community-files.sh  # community files
 ```
 
-`bash scripts/smoke-test.sh` also needs Docker. It loads the plugin into a real Jellyfin server, with and without [File Transformation](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) and under a BaseUrl, and checks what the server reports and serves. CI runs it on every pull request.
+`bash scripts/smoke-test.sh` also needs Docker. It loads the plugin into a real Jellyfin server, on its own, alongside [File Transformation](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) and under a BaseUrl, and checks what the server reports and serves. CI runs it on every pull request.
 
 ## Contributing and security
 

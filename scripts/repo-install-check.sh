@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Proves a Jellyfin server installs the plugin the way an admin does: packages the
 # plugin, serves the zip and manifest.json from a local web container, adds that URL
-# and File Transformation's own plugin repository on a local Jellyfin, installs both
-# through the API, restarts the server, and checks both plugins are active, the
-# switcher is served, and index.html loads it.
+# as a plugin repository on a local Jellyfin, installs it through the API, restarts
+# the server, and checks the plugin is active, the switcher is served, and
+# index.html loads it. No other plugin is installed.
 #
 # Usage: scripts/repo-install-check.sh [--upgrade] [--corrupt-zip]
 #   --upgrade      also package a newer version, install it over the first from the
@@ -11,8 +11,7 @@
 #   --corrupt-zip  change a zip after its checksum is computed (the newer one with
 #                  --upgrade); its install must fail
 #
-# Needs: bash, curl, docker, the .NET 10 SDK, and access to File Transformation's
-# repository and GitHub releases.
+# Needs: bash, curl, docker, the .NET 10 SDK.
 # Environment:
 #   JELLYFIN_IMAGE  image to run (default: the one scripts/smoke-test.sh pins)
 #   CHECK_TIMEOUT   seconds to wait for each step (default 180)
@@ -32,13 +31,6 @@ for arg in "$@"; do
     *) echo "unknown argument: $arg" >&2; exit 2 ;;
   esac
 done
-
-# File Transformation, from the repository its publisher tells admins to add. The
-# version is the one scripts/smoke-test.sh pins for this server version.
-ft_repo_url="https://www.iamparadox.dev/jellyfin/plugins/manifest.json"
-ft_name="File Transformation"
-ft_guid="5e87cc92-571a-4d8d-8d98-d2d4147f9f90"
-ft_version="3.0.2.0"
 
 meta="$(bash scripts/plugin-meta.sh)"
 plugin_name="$(sed -n 's/.*"name": *"\([^"]*\)".*/\1/p' "$meta")"
@@ -69,16 +61,24 @@ fail() {
   exit 1
 }
 
+# The newer version is packaged apart and joins the manifest only after the first is
+# checked, as a new release would; listed from the start, Jellyfin's own plugin
+# update would install it at the first restart.
+next_dir="$out_dir/next"
 rm -rf "$out_dir"
 versions=("$version")
 [[ $upgrade -eq 1 ]] && versions+=("$next")
-for v in "${versions[@]}"; do
-  echo "== package $v"
-  bash scripts/package.sh "$v" "$out_dir" "http://$repo_host" "Local repository check"
-done
+echo "== package $version"
+bash scripts/package.sh "$version" "$out_dir" "http://$repo_host" "Local repository check"
+if [[ $upgrade -eq 1 ]]; then
+  echo "== package $next"
+  bash scripts/package.sh "$next" "$next_dir" "http://$repo_host" "Local repository check"
+fi
 if [[ $corrupt -eq 1 ]]; then
+  last_dir="$out_dir"
+  [[ $upgrade -eq 1 ]] && last_dir="$next_dir"
   echo "== corrupt the $plugin_name ${versions[-1]} zip after its checksum was computed"
-  printf 'corrupted' >>"$out_dir/quick-switch_${versions[-1]}.zip"
+  printf 'corrupted' >>"$last_dir/quick-switch_${versions[-1]}.zip"
 fi
 bash scripts/build-manifest.sh "$out_dir/manifest.json" --entries "$out_dir"
 
@@ -86,9 +86,7 @@ echo "== serve the repository"
 docker network create "$network" >/dev/null
 docker create --name "$repo_container" --network "$network" --network-alias "$repo_host" nginx:alpine >/dev/null
 docker cp "$out_dir/manifest.json" "$repo_container:/usr/share/nginx/html/manifest.json"
-for v in "${versions[@]}"; do
-  docker cp "$out_dir/quick-switch_$v.zip" "$repo_container:/usr/share/nginx/html/"
-done
+docker cp "$out_dir/quick-switch_$version.zip" "$repo_container:/usr/share/nginx/html/"
 docker start "$repo_container" >/dev/null
 
 echo "== start $image"
@@ -143,6 +141,7 @@ install() {
   deadline=$((SECONDS + timeout))
   while true; do
     if docker logs "$server_container" 2>&1 | grep -iE "checksum|installation.*fail|failed.*install" >&2; then
+      docker logs "$server_container" 2>&1 | grep -iE -A12 "installation.*fail|failed.*install" | head -40 >&2 || true
       fail "the server refused to install $name $v"
     fi
     if docker exec "$server_container" sh -c "ls /config/plugins/*_$v/$dll" >/dev/null 2>&1; then
@@ -153,14 +152,13 @@ install() {
   done
 }
 
-# Restarts the server and checks what loaded: the plugin at version v and File
-# Transformation active, the switcher served, and index.html loading version v.
+# Restarts the server and checks what loaded: the plugin active at version v, the
+# switcher served, and index.html loading version v.
 restart_and_check() {
   local v="$1" plugins entries entry page
   echo "== restart and wait for $plugin_name $v to load"
   docker restart "$server_container" >/dev/null
   wait_for_log "Loaded plugin: \"?${plugin_name}\"? \"?${v}\"?"
-  wait_for_log "Loaded plugin: \"?${ft_name}\"? \"?${ft_version}\"?"
   find_api
   local deadline=$((SECONDS + timeout))
   until curl -sf "$api/System/Info/Public" >/dev/null 2>&1; do
@@ -170,8 +168,6 @@ restart_and_check() {
 
   plugins="$(call GET /Plugins)"
   entries="$(sed 's/},{/}\n{/g' <<<"$plugins")"
-  entry="$(grep "\"Name\":\"$ft_name\"" <<<"$entries" || true)"
-  grep -q '"Status":"Active"' <<<"$entry" || fail "$ft_name is not Active: ${entry:-not listed}"
   entry="$(grep "\"Name\":\"$plugin_name\"" <<<"$entries" | grep '"Status":"Active"' || true)"
   [[ "$(grep -c . <<<"$entry")" -eq 1 ]] || fail "expected one Active $plugin_name, /Plugins lists: $(grep "\"Name\":\"$plugin_name\"" <<<"$entries" || echo none)"
   grep -q "\"Version\":\"$v\"" <<<"$entry" || fail "the Active $plugin_name is not version $v: $entry"
@@ -182,7 +178,7 @@ restart_and_check() {
   page="$(curl -sSf "$api/web/index.html")" || fail "GET /web/index.html failed"
   grep -qF "<script src=\"../$script_path?v=$v\"></script>" <<<"$page" \
     || fail "index.html does not load $script_path?v=$v; it has: $(grep -o '<script src="[^"]*QuickSwitch[^"]*"' <<<"$page" || echo 'no switcher tag')"
-  echo "PASS: $plugin_name $v and $ft_name $ft_version are Active, the switcher is served, and index.html loads it as ?v=$v"
+  echo "PASS: $plugin_name $v is Active, the switcher is served, and index.html loads it as ?v=$v"
 }
 
 wait_for_log "Startup complete"
@@ -198,19 +194,23 @@ token="$(call POST /Users/AuthenticateByName '{"Username":"check","Pw":"check-pa
   sed -n 's/.*"AccessToken":"\([^"]*\)".*/\1/p')"
 [[ -n "$token" ]] || fail "could not sign in to the server"
 
-echo "== add the repositories"
-call POST /Repositories "[{\"Name\":\"$ft_name\",\"Url\":\"$ft_repo_url\",\"Enabled\":true},{\"Name\":\"Quick Switch check\",\"Url\":\"$repo_url\",\"Enabled\":true}]"
+echo "== add the repository"
+call POST /Repositories "[{\"Name\":\"Quick Switch check\",\"Url\":\"$repo_url\",\"Enabled\":true}]"
 packages="$(call GET /Packages)"
 grep -q "\"name\":\"$plugin_name\"" <<<"$packages" || fail "the server does not list $plugin_name from $repo_url"
-grep -q "\"name\":\"$ft_name\"" <<<"$packages" || fail "the server does not list $ft_name from $ft_repo_url"
 
-install "$ft_name" "$ft_guid" "$ft_version" "$ft_repo_url" Jellyfin.Plugin.FileTransformation.dll
 install "$plugin_name" "$plugin_guid" "$version" "$repo_url" Jellyfin.Plugin.QuickSwitch.dll
 restart_and_check "$version"
 
 if [[ $upgrade -eq 1 ]]; then
+  echo "== publish $plugin_name $next in the repository"
+  cp "$next_dir/quick-switch_$next.json" "$out_dir/"
+  bash scripts/build-manifest.sh "$out_dir/manifest.json" --entries "$out_dir"
+  docker cp "$next_dir/quick-switch_$next.zip" "$repo_container:/usr/share/nginx/html/"
+  docker cp "$out_dir/manifest.json" "$repo_container:/usr/share/nginx/html/manifest.json"
+  call GET /Packages | grep -q "\"version\":\"$next\"" || fail "the server does not list $plugin_name $next from $repo_url"
   install "$plugin_name" "$plugin_guid" "$next" "$repo_url" Jellyfin.Plugin.QuickSwitch.dll
   restart_and_check "$next"
 fi
 
-echo "PASS: $image (Jellyfin ${server_version:-unknown}) installed $plugin_name ${versions[*]} and $ft_name $ft_version from their repositories"
+echo "PASS: $image (Jellyfin ${server_version:-unknown}) installed $plugin_name ${versions[*]} from its repository, with no other plugin"

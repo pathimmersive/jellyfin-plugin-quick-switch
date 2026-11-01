@@ -17,6 +17,6 @@ labels: bug
 
 - Jellyfin server version:
 - Quick Switch version or commit:
-- File Transformation version:
+- Other plugins that change jellyfin-web, if any (for example File Transformation):
 - Client app and its version (browser, LG webOS, Android, iOS, Jellyfin Desktop):
 - Device:
