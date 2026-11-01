@@ -168,11 +168,11 @@
         return COLORS[hash % COLORS.length];
     }
 
-    function avatar(account, serverAddress, size) {
+    function avatar(account, server, size) {
         var name = String((account && account.Name) || '?');
         var url = null;
-        if (account && account.PrimaryImageTag && serverAddress) {
-            url = String(serverAddress).replace(/\/+$/, '') + '/Users/' + encodeURIComponent(account.UserId)
+        if (account && account.PrimaryImageTag && server) {
+            url = String(server).replace(/\/+$/, '') + '/Users/' + encodeURIComponent(account.UserId)
                 + '/Images/Primary?tag=' + encodeURIComponent(account.PrimaryImageTag)
                 + '&quality=90&maxHeight=' + (size || 360);
         }
@@ -495,7 +495,7 @@
             if (!managing) {
                 pick(account);
             } else if (Date.now() - dragEnded < 400) {
-                return;
+                // The click that ends a drag is not a pick-up.
             } else if (moving) {
                 if (moving.userId === account.UserId) {
                     drop();
@@ -589,7 +589,7 @@
     // Accounts they follow the focus.
     function hintItems() {
         if (mode === 'move') {
-            return [[rowLength() < slotList().length ? '◀ ▶ ▲ ▼' : '◀ ▶', 'Move'], ['OK', 'Put here'], ['BACK', 'Cancel']];
+            return [[moving.perRow < slotList().length ? '◀ ▶ ▲ ▼' : '◀ ▶', 'Move'], ['OK', 'Put here'], ['BACK', 'Cancel']];
         }
         if (mode === 'confirm') {
             return [['OK', 'Select'], ['BACK', 'Cancel']];
@@ -614,8 +614,14 @@
         if (!box) {
             return;
         }
-        box.innerHTML = '';
+        // Focus moves on every arrow press; the hints change far less often.
         var items = hintItems();
+        var key = mode + JSON.stringify(items);
+        if (box.getAttribute('data-qs-hints') === key) {
+            return;
+        }
+        box.setAttribute('data-qs-hints', key);
+        box.innerHTML = '';
         for (var i = 0; i < items.length; i++) {
             var hint = el('span');
             hint.appendChild(el('span', 'qs-key', items[i][0]));
@@ -773,7 +779,8 @@
             return;
         }
         var name = box.querySelector('.qs-name').textContent;
-        moving = { userId: userId, name: name, from: slotList().indexOf(box) };
+        // perRow is measured once: reading tile positions forces a layout.
+        moving = { userId: userId, name: name, from: slotList().indexOf(box), perRow: rowLength() };
         mode = 'move';
         showBin(null);
         box.classList.add('qs-lifted');
@@ -1055,8 +1062,9 @@
         keep.focus();
     }
 
-    // Revokes the removed account's own token (decision 0004), then forgets
-    // it whatever the server said; the account signed in is never touched.
+    // Revokes the removed account's own token, so it stops working on the
+    // server, then forgets it whatever the server said; the account signed in
+    // is never touched.
     var removing = false;
 
     function removeAccount(account) {
@@ -1720,7 +1728,7 @@
             if (code === KEY.left || code === KEY.right) {
                 step(code === KEY.left ? -1 : 1);
             } else if (code === KEY.up || code === KEY.down) {
-                step((code === KEY.up ? -1 : 1) * rowLength());
+                step((code === KEY.up ? -1 : 1) * moving.perRow);
             } else if (code === KEY.enter) {
                 drop();
             } else if (isBackKey(event)) {
@@ -1842,7 +1850,7 @@
         opener = null;
     }
 
-    // Where the switcher opens from (decision 0005): an item in the desktop and
+    // Where the switcher opens from: an item in the desktop and
     // phone User Menu, a row in the TV settings page's User section, and the
     // remote's red button. The first two are found by the structure jellyfin-web
     // gives them; when that changes they are simply not added.

@@ -14,7 +14,7 @@ namespace Jellyfin.Plugin.QuickSwitch.Integration;
 /// Adds the switcher's script tag to jellyfin-web's index page as it is served.
 /// Every other request passes through untouched; the file on disk is never written.
 /// </summary>
-public sealed class IndexPageMiddleware
+public sealed partial class IndexPageMiddleware
 {
     private readonly RequestDelegate _next;
     private readonly ILogger<IndexPageMiddleware> _logger;
@@ -140,8 +140,11 @@ public sealed class IndexPageMiddleware
         catch (Exception exception)
         {
             // A fault can only cost the switcher, never jellyfin-web.
-            _logger.LogError(exception, "Adding the account switcher to jellyfin-web failed; serving the page unchanged");
+            LogChangeFailed(_logger, exception);
             return stock;
         }
     }
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Adding the account switcher to jellyfin-web failed; serving the page unchanged")]
+    private static partial void LogChangeFailed(ILogger logger, Exception exception);
 }

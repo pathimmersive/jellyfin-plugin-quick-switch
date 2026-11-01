@@ -9,7 +9,7 @@ namespace Jellyfin.Plugin.QuickSwitch.Integration;
 /// Puts <see cref="IndexPageMiddleware"/> ahead of the rest of Jellyfin's pipeline,
 /// so it sees jellyfin-web's index page before it is sent.
 /// </summary>
-public sealed class IndexPageStartupFilter : IStartupFilter
+public sealed partial class IndexPageStartupFilter : IStartupFilter
 {
     private readonly ILogger<IndexPageStartupFilter> _logger;
 
@@ -25,8 +25,11 @@ public sealed class IndexPageStartupFilter : IStartupFilter
     /// <inheritdoc />
     public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) => app =>
     {
-        _logger.LogInformation("Account switcher added to jellyfin-web");
+        LogAdded(_logger);
         app.UseMiddleware<IndexPageMiddleware>();
         next(app);
     };
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Account switcher added to jellyfin-web")]
+    private static partial void LogAdded(ILogger logger);
 }
