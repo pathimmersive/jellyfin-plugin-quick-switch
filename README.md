@@ -23,7 +23,11 @@ Accounts are opt-in and per device: an account appears in a device's switcher on
 
 Quick Switch saves each account's Jellyfin access token on the device, in the same browser storage where jellyfin-web already keeps the signed-in account's token. **Anyone using that device can switch to any account saved on it, without a password.** That is the intended behaviour; only save accounts on devices whose users you trust with them.
 
-A saved account stops working, and asks for its password again, when its password is changed, its device is deleted in **Dashboard → Devices**, or the account is disabled. Removing an account from the switcher signs that account out on that device, so its token stops working, and leaves the other accounts signed in.
+A saved account stops working, and asks for its password again, when its password is changed, its device is deleted in **Dashboard → Devices**, or the account is disabled. Removing an account in **Manage Accounts** signs it out on that device and leaves the other accounts signed in. Jellyfin's own **Sign out** signs out only the account signed in now; the others stay saved until they are removed.
+
+- **Administrator accounts:** saving one on a shared device gives everyone who uses that device the server's Dashboard. Keep administrator accounts off devices other people use.
+- **HTTPS:** reach your server over HTTPS, so access tokens never cross the network in clear.
+- **Other plugins and custom JavaScript:** anything else that runs inside jellyfin-web on your server can read the accounts saved on a device, just as it can read the signed-in one. Only install plugins you trust.
 
 ## Compatibility
 
