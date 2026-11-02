@@ -1106,7 +1106,7 @@
         var remove = el('button', 'qs-button qs-wide', 'Remove');
         remove.type = 'button';
         remove.setAttribute('data-qs-action', 'confirm-remove');
-        remove.addEventListener('click', function () { removeAccount(account); });
+        remove.addEventListener('click', function () { removeAccount(account, remove); });
         dialog.appendChild(keep);
         dialog.appendChild(remove);
         scrim.appendChild(dialog);
@@ -1136,7 +1136,7 @@
         var retry = el('button', 'qs-button qs-wide', 'Try again');
         retry.type = 'button';
         retry.setAttribute('data-qs-action', 'remove-retry');
-        retry.addEventListener('click', function () { removeAccount(account); });
+        retry.addEventListener('click', function () { removeAccount(account, retry); });
         var local = el('button', 'qs-button qs-wide', 'Remove from ' + deviceWord() + ' only');
         local.type = 'button';
         local.setAttribute('data-qs-action', 'remove-local');
@@ -1176,29 +1176,74 @@
     // server, then forgets it; the account signed in is never touched. A 401
     // means the token already no longer works. Any other failure asks first.
 
-    function removeAccount(account) {
+    function removeAccount(account, button) {
         var now = signedIn();
         if (!now || removing || account.UserId === now.userId) {
             return;
         }
         if (!knownAt(account, serverAddress())) {
-            // Its token never goes to an address it didn\u2019t sign in through.
+            // Its token never goes to an address it didn't sign in through.
             forgetAccount(account);
             return;
         }
         removing = true;
+        var asking = button && withClass(button, 'qs-scrim');
+        if (button) {
+            showBusy(button, 'Removing...');
+        }
+        announce('Removing ' + account.Name + '...');
         request('POST', 'Sessions/Logout', account.AccessToken, function (status) {
             removing = false;
+            // The dialog that asked may have been left while the server took its time.
+            var stillAsking = !!asking && !!overlay && overlay.contains(asking);
             if ((status >= 200 && status < 300) || status === 401) {
-                forgetAccount(account);
-            } else if (overlay) {
-                var open = overlay.querySelector('.qs-scrim');
-                if (open) {
-                    open.parentNode.removeChild(open);
+                if (stillAsking || !asking) {
+                    forgetAccount(account);
+                } else {
+                    // Signed out on the server already: forget it here too, without reopening anything.
+                    var now = signedIn();
+                    if (now) {
+                        forget(now.serverId, account.UserId);
+                    }
+                    if (overlay && mode === 'manage') {
+                        render('manage', 'manage');
+                    }
+                    toast(account.Name + ' removed from ' + deviceWord());
                 }
+            } else if (stillAsking) {
+                asking.parentNode.removeChild(asking);
                 showRemoveFailed(account);
             }
         });
+    }
+
+    // The nearest element, from node up, that has className among its classes.
+    function withClass(node, className) {
+        while (node && node.className !== undefined) {
+            if ((' ' + node.className + ' ').indexOf(' ' + className + ' ') !== -1) {
+                return node;
+            }
+            node = node.parentNode;
+        }
+        return null;
+    }
+
+    // A dialog button whose action is waiting for the server: it says so, and
+    // the dialog's buttons do nothing more until the answer.
+    function showBusy(button, text) {
+        var buttons = withClass(button, 'qs-dialog').querySelectorAll('button');
+        for (var i = 0; i < buttons.length; i++) {
+            buttons[i].disabled = true;
+        }
+        // An earlier toast would talk over the wait.
+        var shown = document.querySelector('.qs-toast');
+        if (shown) {
+            shown.parentNode.removeChild(shown);
+        }
+        button.className += ' qs-busy';
+        button.textContent = '';
+        button.appendChild(el('span', 'qs-spinner'));
+        button.appendChild(document.createTextNode(text));
     }
 
     function hideAdd() {
@@ -1943,7 +1988,10 @@
                 hideAdd();
             } else if (mode === 'confirm') {
                 var keep = overlay.querySelector('[data-qs-action="confirm-keep"]');
-                if (keep) {
+                if (keep && keep.disabled) {
+                    // Waiting for the server: Back still leaves, and a failure that lands later shows nothing.
+                    render('manage', 'manage');
+                } else if (keep) {
                     keep.click();
                 }
             } else if (mode === 'ask') {
