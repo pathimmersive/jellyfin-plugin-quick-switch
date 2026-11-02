@@ -4,7 +4,13 @@
 # Transformation plugin installed alongside, and under a BaseUrl. Exits non-zero on the first failed check and
 # always removes the container.
 #
-# Needs: bash, curl, docker, unzip, md5sum, the .NET 10 SDK.
+# Usage: scripts/smoke-test.sh [--latest]
+#
+# --latest builds against the newest Jellyfin packages and runs every case on
+# the newest Jellyfin image, with the newest File Transformation build for it
+# (scripts/latest-versions.sh), instead of the pinned versions below.
+#
+# Needs: bash, curl, docker, unzip, md5sum, the .NET 10 SDK, and Node.js for --latest.
 # Override the image with JELLYFIN_IMAGE=jellyfin/jellyfin:<tag>.
 set -euo pipefail
 
@@ -25,8 +31,25 @@ FT_VERSION="3.0.2.0"
 FT_SERVER_VERSION="12.2.0"
 FT_URL="https://github.com/IAmParadox27/jellyfin-plugin-file-transformation/releases/download/$FT_VERSION/Release-$FT_SERVER_VERSION.zip"
 FT_MD5="76eae3b09a42dba7992820fa8f6a4584"
+JELLYFIN_VERSION=""
 
 repo="$(cd "$(dirname "$0")/.." && pwd)"
+
+case "${1:-}" in
+    "") ;;
+    --latest)
+        latest="$(bash "$repo/scripts/latest-versions.sh")" || { echo "FAIL: find the newest Jellyfin" >&2; exit 1; }
+        while IFS='=' read -r key value; do
+            case "$key" in
+                JELLYFIN_VERSION) JELLYFIN_VERSION="$value" ;;
+                JELLYFIN_IMAGE) IMAGE="$value" ;;
+                FT_VERSION|FT_SERVER_VERSION|FT_URL|FT_MD5) printf -v "$key" '%s' "$value" ;;
+            esac
+        done <<< "$latest"
+        echo "$latest"
+        ;;
+    *) echo "usage: $0 [--latest]" >&2; exit 2 ;;
+esac
 work="$(mktemp -d)"
 container="quickswitch-smoke-$$"
 
@@ -50,7 +73,7 @@ json_str() { grep -o "\"$1\":\"[^\"]*\"" | head -1 | sed "s/^\"$1\":\"\(.*\)\"$/
 
 project="$repo/src/Jellyfin.Plugin.QuickSwitch/Jellyfin.Plugin.QuickSwitch.csproj"
 plugin_dir="$work/plugins/$PLUGIN_DIR"
-dotnet publish "$project" -c Release -o "$plugin_dir" --nologo -v quiet >/dev/null || fail "dotnet publish"
+dotnet publish "$project" -c Release -o "$plugin_dir" --nologo -v quiet ${JELLYFIN_VERSION:+"-p:JellyfinVersion=$JELLYFIN_VERSION"} >/dev/null     || fail "dotnet publish"
 [ -f "$plugin_dir/Jellyfin.Plugin.QuickSwitch.dll" ] || fail "plugin assembly missing from publish output"
 grep -q '"targetAbi": *"12.0.0.0"' "$plugin_dir/meta.json" || fail "meta.json does not declare targetAbi 12.0.0.0"
 pass "plugin built; meta.json declares targetAbi 12.0.0.0"
@@ -58,7 +81,7 @@ grep -q '"imagePath": *"icon.png"' "$plugin_dir/meta.json" && [ -s "$plugin_dir/
     || fail "the plugin folder does not carry icon.png named by meta.json's imagePath"
 pass "the plugin folder carries icon.png, named by meta.json's imagePath"
 
-ft_cache="${XDG_CACHE_HOME:-$HOME/.cache}/quick-switch/FileTransformation-$FT_VERSION.zip"
+ft_cache="${XDG_CACHE_HOME:-$HOME/.cache}/quick-switch/FileTransformation-$FT_VERSION-$FT_SERVER_VERSION.zip"
 if [ ! -f "$ft_cache" ] || [ "$(md5sum "$ft_cache" | cut -d' ' -f1)" != "$FT_MD5" ]; then
     mkdir -p "$(dirname "$ft_cache")"
     curl -sSfL -o "$ft_cache" "$FT_URL" || fail "download File Transformation $FT_VERSION"

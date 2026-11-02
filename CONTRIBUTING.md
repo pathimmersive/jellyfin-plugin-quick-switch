@@ -21,6 +21,14 @@ For a bug, use the bug report form. Include the Jellyfin server version, the Qui
 
 The switcher script in `src/switcher` is plain ES5 with no build step, because TV apps run older browser engines. Keep it that way.
 
+## Following Jellyfin releases
+
+Jellyfin, jellyfin-web and File Transformation change on their own schedules, so the plugin is checked against their newest releases every week.
+
+- **Noticing.** The Canary workflow runs every Monday. It builds and tests the plugin against the newest Jellyfin packages on NuGet, then runs `bash scripts/smoke-test.sh --latest`: the smoke test on the newest `jellyfin/jellyfin` image, with the newest File Transformation build for that server version in its case. `bash scripts/latest-versions.sh` prints the versions it picks. When a scheduled or manual run fails, it opens an issue titled **Canary: checks fail on the newest Jellyfin**, or comments on the one already open. Dependabot proposes updates to the other NuGet packages and the pinned GitHub Actions each week.
+- **Checking.** When a new Jellyfin version comes out, run the Canary workflow by hand (Actions → Canary → Run workflow) or `bash scripts/smoke-test.sh --latest`. Then try the switcher on that version in a browser: open it, switch, add an account, reorder and remove one. A fix to the switcher is also tried in a TV app. Note what you checked, and on which versions, in the pull request.
+- **Rolling out.** A fix ships as a new plugin version, as [Releases](#releases) describes, with a changelog line naming the Jellyfin version it fixes. Raise `JellyfinVersion` in `Directory.Build.props` and `JellyfinTargetAbi` in the project file only when the plugin needs something older servers lack: a server older than `targetAbi` refuses the plugin, so say so under **Changed** in the changelog and in the README's requirements. When most users have moved to a newer Jellyfin, move the pinned image in `scripts/smoke-test.sh` and `scripts/repo-install-check.sh`, and the File Transformation release in `scripts/smoke-test.sh`, to it in a pull request of its own.
+
 ## Releases
 
 Releases are cut by a maintainer, and only when there is something worth shipping. Nothing is released from `main` automatically.
