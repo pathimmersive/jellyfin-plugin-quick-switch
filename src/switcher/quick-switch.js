@@ -36,6 +36,44 @@
     var CREDENTIALS = 'jellyfin_credentials';
     var KEY = { escape: 27, back: 461, tizenBack: 10009, browserBack: 166, red: 403, enter: 13, space: 32, left: 37, up: 38, right: 39, down: 40, tab: 9 };
 
+    // State -------------------------------------------------------------------
+    // What the switcher remembers while the page is open. The saved accounts
+    // themselves are in the store below.
+    // The last sign-in seen, as server, user, token and address, so the server is asked about each one once.
+    var lastSeen = '';
+    // Who was signed in at the last look, to notice jellyfin-web's own Sign Out.
+    var wasSignedIn = null;
+    // Whether this load has run the sign-out check left by the last one.
+    var checkedSignOut = false;
+    // The switcher's element while it is open.
+    var overlay = null;
+    // What the switcher shows: pick, manage, move, add, confirm or ask.
+    var mode = 'pick';
+    // The element that opened the switcher, where focus returns when it closes.
+    var opener = null;
+    // The account being moved in Manage Accounts: who, from where, and how many tiles fit on a row.
+    var moving = null;
+    // A mouse or touch drag in progress.
+    var drag = null;
+    // When the last drag ended, so the click that ends it doesn't pick the tile up.
+    var dragEnded = 0;
+    // Whether a remove is waiting for the server.
+    var removing = false;
+    // An add in progress: the account to return to, which card was chosen, and how far it has got.
+    var adding = null;
+    // The account being signed back in after Back while adding.
+    var returning = null;
+    // Whether a switch is in progress.
+    var switching = false;
+    // The timer that takes the toast away.
+    var toastTimer = null;
+    // Whether a key was pressed since the page loaded, so start-up focus leaves it alone.
+    var keyPressed = false;
+    // The element jellyfin-web focused under the switcher, where focus goes when it closes.
+    var lastFocus = null;
+
+    // Store -------------------------------------------------------------------
+
     // Saved accounts, per server, in this browser's localStorage. Only accounts
     // that signed in on this device are ever saved.
 
@@ -244,6 +282,8 @@
         return { initial: name.charAt(0).toUpperCase(), color: colorFor(account && account.UserId), imageUrl: url };
     }
 
+    // Server calls and sign-ins -----------------------------------------------
+
     // jellyfin-web's ApiClient, once it exists.
 
     function client() {
@@ -294,12 +334,6 @@
 
     // Whoever signs in on this device is saved, or their token replaced. The
     // server is asked only when the signed-in user or token changes.
-    var lastSeen = '';
-
-    // Who was signed in at the last look, to notice jellyfin-web's own Sign
-    // Out; and whether this load has run the sign-out check left by the last.
-    var wasSignedIn = null;
-    var checkedSignOut = false;
 
     // An account that signed out with jellyfin-web's Sign Out leaves the
     // switcher too, once the server rejects its saved token. No answer leaves
@@ -392,11 +426,7 @@
         });
     }
 
-    // The switcher overlay.
-
-    var overlay = null;
-    var mode = 'pick';
-    var opener = null;
+    // Views -------------------------------------------------------------------
 
     // The styles are quick-switch.css, beside this script on the server, with
     // the same version, so they work under any BaseUrl and are cached alike.
@@ -708,12 +738,11 @@
         updateHints();
     }
 
+    // Moving accounts ---------------------------------------------------------
+
     // Moving a tile in Manage Accounts: it is picked up, the arrows (or its
     // arrow buttons, or a drag) move it while the others make room, and OK or
     // selecting it again puts it down and saves the order. Back puts it back.
-    var moving = null;
-    var drag = null;
-    var dragEnded = 0;
 
     function slotList() {
         return overlay ? Array.prototype.slice.call(overlay.querySelectorAll('.qs-slot')) : [];
@@ -949,6 +978,8 @@
         }
     }
 
+    // Dialogs and removing ----------------------------------------------------
+
     // In Manage Accounts Up reaches the focused tile's remove button, Down
     // returns to the tile, and Left and Right move along the remove buttons.
     function manageArrow(code) {
@@ -1116,7 +1147,6 @@
     // Revokes the removed account's own token, so it stops working on the
     // server, then forgets it; the account signed in is never touched. A 401
     // means the token already no longer works. Any other failure asks first.
-    var removing = false;
 
     function removeAccount(account) {
         var now = signedIn();
@@ -1153,9 +1183,10 @@
         }
     }
 
+    // Adding an account -------------------------------------------------------
+
     // Adding an account signs the current one out on this device only: its
     // token is kept in the store, never revoked, and comes back on Back.
-    var adding = null;
 
     // again, when given, is a saved account whose sign-in stopped working:
     // the sign-in page opens for that account.
@@ -1420,7 +1451,6 @@
 
     // Back while adding: Who's watching? covers the page at once, with the
     // previous account marked, while that account is signed in again under it.
-    var returning = null;
 
     function cancelAdd() {
         var previous = adding.previous;
@@ -1527,12 +1557,180 @@
         }
     }
 
+    function onAddingKey(event) {
+        if (adding && !overlay && isBackKey(event) && visibleLogin()) {
+            event.preventDefault();
+            event.stopPropagation();
+            cancelAdd();
+        }
+    }
+
+    // The browser's own Back leaves the sign-in page with nobody signed in.
+    // The route is read as it changes: jellyfin-web sends a signed-out
+    // browser back to the sign-in page a moment later. Closing jellyfin-web's
+    // Quick Connect dialog also goes back, but stays on the sign-in route.
+    function onAddingRoute() {
+        if (!adding || /login/.test(window.location.hash)) {
+            return;
+        }
+        window.setTimeout(function () {
+            if (adding && !signedIn()) {
+                cancelAdd();
+            }
+        }, 0);
+    }
+
+    // Switching and notices ---------------------------------------------------
+
+    // Bottom-left notice in jellyfin-web's toast style; with an account it shows that account's avatar.
+
+    function toast(text, account, isError) {
+        var old = document.querySelector('.qs-toast');
+        if (old) {
+            old.parentNode.removeChild(old);
+        }
+        window.clearTimeout(toastTimer);
+        addStyles();
+        var box = el('div', 'qs-toast' + (account || isError ? '' : ' qs-plain'));
+        box.setAttribute('role', 'status');
+        if (isError) {
+            box.appendChild(icon('error', 22, '#ff8a80'));
+        } else if (account) {
+            box.appendChild(avatarCircle(account, serverAddress(), 'qs-mini'));
+        }
+        box.appendChild(el('span', null, text));
+        document.body.appendChild(box);
+        toastTimer = window.setTimeout(function () {
+            if (box.parentNode) {
+                box.parentNode.removeChild(box);
+            }
+        }, 4000);
+    }
+
+    function navigate(route) {
+        if (window.Dashboard && typeof window.Dashboard.navigate === 'function') {
+            window.Dashboard.navigate(route);
+        } else {
+            window.location.hash = '#/' + route;
+        }
+    }
+
+    // jellyfin-web rebuilds the home screen only when it is shown after another
+    // view, so show the preferences menu (static, no requests of its own) and go
+    // home as soon as it is up. done() runs once home is shown.
+    function showHomeAgain(done) {
+        var stage = 'via';
+        var onShow;
+        var finish = function () {
+            if (stage === 'done') {
+                return;
+            }
+            stage = 'done';
+            document.removeEventListener('viewshow', onShow);
+            done();
+        };
+        onShow = function (event) {
+            var home = event.target && event.target.id === 'indexPage';
+            if (stage === 'via' && !home) {
+                stage = 'home';
+                navigate('home');
+            } else if (stage === 'home' && home) {
+                finish();
+            }
+        };
+        document.addEventListener('viewshow', onShow);
+        window.setTimeout(function () {
+            if (stage === 'via') {
+                stage = 'home';
+                navigate('home');
+            }
+        }, 2000);
+        window.setTimeout(finish, 6000);
+        navigate('mypreferencesmenu');
+    }
+
+    function splash(account) {
+        overlay.innerHTML = '';
+        var box = el('div', 'qs-splash');
+        var ring = el('div', 'qs-ring');
+        ring.appendChild(avatarCircle(account, serverAddress(), 'qs-avatar'));
+        box.appendChild(ring);
+        box.appendChild(el('p', 'qs-hi', 'Hi, ' + account.Name));
+        overlay.appendChild(box);
+    }
+
+    function nameOf(serverId, userId) {
+        var saved = list(serverId);
+        var at = indexOf(saved, userId);
+        return at === -1 ? '' : saved[at].Name;
+    }
+
+    // Signs jellyfin-web in as a saved account in place: never a reload, which
+    // would drop the webOS app's NativeShell.
+
+    function pick(account) {
+        var now = signedIn();
+        if (!now || switching) {
+            return;
+        }
+        if (account.UserId === now.userId) {
+            toast('Already watching as ' + account.Name, account);
+            return;
+        }
+        var c = client();
+        if (typeof c.onAuthenticated !== 'function') {
+            toast('This version of jellyfin-web can\u2019t switch accounts in place.', null, true);
+            return;
+        }
+        if (account.Stale || !knownAt(account, serverAddress())) {
+            startAdd(false, account);
+            return;
+        }
+        switching = true;
+        var started = new Date().getTime();
+        splash(account);
+        var back = function (message) {
+            switching = false;
+            if (overlay) {
+                render();
+            }
+            toast(message, null, true);
+        };
+        request('GET', 'Users/Me', account.AccessToken, function (status, user) {
+            if (status === 0) {
+                back('Can\u2019t reach the server right now. You\u2019re still watching as ' + nameOf(now.serverId, now.userId) + '.');
+                return;
+            }
+            if (status !== 200 || !user || user.Id !== account.UserId) {
+                switching = false;
+                markStale(now.serverId, account.UserId);
+                account.Stale = true;
+                startAdd(false, account);
+                return;
+            }
+            var fresh = { UserId: user.Id, Name: user.Name, AccessToken: account.AccessToken, PrimaryImageTag: user.PrimaryImageTag };
+            save(now.serverId, fresh);
+            var arrived = function () {
+                var wait = Math.max(0, SPLASH_MS - (new Date().getTime() - started));
+                window.setTimeout(function () {
+                    switching = false;
+                    close();
+                    toast('Now watching as ' + fresh.Name, fresh);
+                }, wait);
+            };
+            signInInPlace(user, account.AccessToken, now.serverId, arrived, function () {
+                back('Couldn\u2019t switch to ' + account.Name + '.');
+            });
+        });
+    }
+
+    // Keys and focus ----------------------------------------------------------
+
     // On an LG TV the remote's keys reach the page only once something in it
     // has focus. jellyfin-web focuses a card on a home screen with libraries;
     // with none, nothing is focused and the remote does nothing, red button
     // included. So at start-up in the TV layout, when a page has been showing
     // for a few seconds with nothing focused, focus goes to the header.
-    var keyPressed = false;
 
     function onFirstKey() {
         keyPressed = true;
@@ -1591,172 +1789,6 @@
     function isBackKey(event) {
         var code = event.keyCode;
         return code === KEY.escape || code === KEY.back || code === KEY.tizenBack || code === KEY.browserBack || event.key === 'GoBack';
-    }
-
-    function onAddingKey(event) {
-        if (adding && !overlay && isBackKey(event) && visibleLogin()) {
-            event.preventDefault();
-            event.stopPropagation();
-            cancelAdd();
-        }
-    }
-
-    // The browser's own Back leaves the sign-in page with nobody signed in.
-    // The route is read as it changes: jellyfin-web sends a signed-out
-    // browser back to the sign-in page a moment later. Closing jellyfin-web's
-    // Quick Connect dialog also goes back, but stays on the sign-in route.
-    function onAddingRoute() {
-        if (!adding || /login/.test(window.location.hash)) {
-            return;
-        }
-        window.setTimeout(function () {
-            if (adding && !signedIn()) {
-                cancelAdd();
-            }
-        }, 0);
-    }
-
-    // Bottom-left notice in jellyfin-web's toast style; with an account it shows that account's avatar.
-    var toastTimer = null;
-
-    function toast(text, account, isError) {
-        var old = document.querySelector('.qs-toast');
-        if (old) {
-            old.parentNode.removeChild(old);
-        }
-        window.clearTimeout(toastTimer);
-        addStyles();
-        var box = el('div', 'qs-toast' + (account || isError ? '' : ' qs-plain'));
-        box.setAttribute('role', 'status');
-        if (isError) {
-            box.appendChild(icon('error', 22, '#ff8a80'));
-        } else if (account) {
-            box.appendChild(avatarCircle(account, serverAddress(), 'qs-mini'));
-        }
-        box.appendChild(el('span', null, text));
-        document.body.appendChild(box);
-        toastTimer = window.setTimeout(function () {
-            if (box.parentNode) {
-                box.parentNode.removeChild(box);
-            }
-        }, 4000);
-    }
-
-    function navigate(route) {
-        if (window.Dashboard && typeof window.Dashboard.navigate === 'function') {
-            window.Dashboard.navigate(route);
-        } else {
-            window.location.hash = '#/' + route;
-        }
-    }
-
-    // jellyfin-web rebuilds the home screen only when it is shown after another
-    // view, so show the preferences menu (static, no requests of its own) and go
-    // home as soon as it is up. done() runs once home is shown.
-    function showHomeAgain(done) {
-        var stage = 'via';
-        var onShow = function (event) {
-            var home = event.target && event.target.id === 'indexPage';
-            if (stage === 'via' && !home) {
-                stage = 'home';
-                navigate('home');
-            } else if (stage === 'home' && home) {
-                finish();
-            }
-        };
-        var finish = function () {
-            if (stage === 'done') {
-                return;
-            }
-            stage = 'done';
-            document.removeEventListener('viewshow', onShow);
-            done();
-        };
-        document.addEventListener('viewshow', onShow);
-        window.setTimeout(function () {
-            if (stage === 'via') {
-                stage = 'home';
-                navigate('home');
-            }
-        }, 2000);
-        window.setTimeout(finish, 6000);
-        navigate('mypreferencesmenu');
-    }
-
-    function splash(account) {
-        overlay.innerHTML = '';
-        var box = el('div', 'qs-splash');
-        var ring = el('div', 'qs-ring');
-        ring.appendChild(avatarCircle(account, serverAddress(), 'qs-avatar'));
-        box.appendChild(ring);
-        box.appendChild(el('p', 'qs-hi', 'Hi, ' + account.Name));
-        overlay.appendChild(box);
-    }
-
-    function nameOf(serverId, userId) {
-        var saved = list(serverId);
-        var at = indexOf(saved, userId);
-        return at === -1 ? '' : saved[at].Name;
-    }
-
-    // Signs jellyfin-web in as a saved account in place: never a reload, which
-    // would drop the webOS app's NativeShell.
-    var switching = false;
-
-    function pick(account) {
-        var now = signedIn();
-        if (!now || switching) {
-            return;
-        }
-        if (account.UserId === now.userId) {
-            toast('Already watching as ' + account.Name, account);
-            return;
-        }
-        var c = client();
-        if (typeof c.onAuthenticated !== 'function') {
-            toast('This version of jellyfin-web can\u2019t switch accounts in place.', null, true);
-            return;
-        }
-        if (account.Stale || !knownAt(account, serverAddress())) {
-            startAdd(false, account);
-            return;
-        }
-        switching = true;
-        var started = new Date().getTime();
-        splash(account);
-        var back = function (message) {
-            switching = false;
-            if (overlay) {
-                render();
-            }
-            toast(message, null, true);
-        };
-        request('GET', 'Users/Me', account.AccessToken, function (status, user) {
-            if (status === 0) {
-                back('Can\u2019t reach the server right now. You\u2019re still watching as ' + nameOf(now.serverId, now.userId) + '.');
-                return;
-            }
-            if (status !== 200 || !user || user.Id !== account.UserId) {
-                switching = false;
-                markStale(now.serverId, account.UserId);
-                account.Stale = true;
-                startAdd(false, account);
-                return;
-            }
-            var fresh = { UserId: user.Id, Name: user.Name, AccessToken: account.AccessToken, PrimaryImageTag: user.PrimaryImageTag };
-            save(now.serverId, fresh);
-            var arrived = function () {
-                var wait = Math.max(0, SPLASH_MS - (new Date().getTime() - started));
-                window.setTimeout(function () {
-                    switching = false;
-                    close();
-                    toast('Now watching as ' + fresh.Name, fresh);
-                }, wait);
-            };
-            signInInPlace(user, account.AccessToken, now.serverId, arrived, function () {
-                back('Couldn\u2019t switch to ' + account.Name + '.');
-            });
-        });
     }
 
     // The controls of the top layer: the open dialog, else the switcher.
@@ -1930,7 +1962,6 @@
     // jellyfin-web focuses a page it shows under the switcher (the home
     // screen after a switch or a Back while adding). Focus stays in the
     // switcher, and that element is where it goes when the switcher closes.
-    var lastFocus = null;
 
     function onFocusIn(event) {
         var target = event.target;
@@ -1969,6 +2000,8 @@
         }
         opener = null;
     }
+
+    // Entry points ------------------------------------------------------------
 
     // Where the switcher opens from: an item in the desktop and
     // phone User Menu, a row in the TV settings page's User section, and the
@@ -2146,6 +2179,8 @@
             open();
         }
     }
+
+    // Start-up ----------------------------------------------------------------
 
     function start() {
         var queued = false;
