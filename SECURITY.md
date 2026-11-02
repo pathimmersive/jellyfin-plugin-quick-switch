@@ -6,6 +6,13 @@ Please do not open a public issue for a security problem. Report it privately th
 
 Include what is affected, the Jellyfin server version, the Quick Switch version or commit, the client app and device, and the steps to reproduce it. You will get a reply in the report, and the fix and its advisory are coordinated there.
 
+## What to expect
+
+- A private report is acknowledged within 7 days.
+- The repository is also scanned: GitHub secret scanning with push protection, Dependabot alerts and security updates, CodeQL on every change and weekly, and a weekly audit of the NuGet packages (`bash scripts/audit-packages.sh`). Their alerts are triaged weekly.
+- Critical and high severity problems are fixed first. A fix ships as a new version as soon as practical; this is an unofficial plugin maintained on a best-effort basis, so there is no fixed deadline.
+- Once the fixed version is out, a security advisory describes the problem and the version that fixes it.
+
 ## Supported versions
 
 Quick Switch has no release yet. Fixes go into `main`; once releases exist, the latest release is supported.
