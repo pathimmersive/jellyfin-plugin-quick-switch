@@ -216,11 +216,11 @@ function fakeRequests() {
 }
 
 // Loads the script signed in as `signedIn` and hands back its one-second watch.
-function watching(signedIn, options) {
+function watching(signedIn, options, storage = memoryStorage()) {
     const { FakeXhr, sent } = fakeRequests()
     let tick = null
     const window = load({
-        localStorage: memoryStorage(),
+        localStorage: storage,
         ApiClient: apiClient(signedIn, options),
         XMLHttpRequest: FakeXhr,
         setInterval: (fn) => { tick = fn },
@@ -310,4 +310,52 @@ test('builds the request address from the server address when the ApiClient cann
     tick()
 
     assert.equal(sent[0].url, 'http://server/jf/Users/Me')
+})
+
+test('an administrator who is not saved yet is not saved without asking', () => {
+    const { tick, sent, store } = watching({ serverId: 's', userId: 'a', token: 't1' })
+    tick()
+
+    sent[0].answer(200, { Id: 'a', Name: 'Al', Policy: { IsAdministrator: true } })
+
+    assert.deepEqual(store.list('s'), [])
+})
+
+test('an account that is not an administrator is saved without asking', () => {
+    const { tick, sent, store } = watching({ serverId: 's', userId: 'b', token: 't1' })
+    tick()
+
+    sent[0].answer(200, { Id: 'b', Name: 'Bo', Policy: { IsAdministrator: false } })
+
+    assert.equal(store.list('s').length, 1)
+})
+
+test('an administrator already saved keeps its place when it signs in again', () => {
+    const signedIn = { serverId: 's', userId: 'a', token: 't1' }
+    const { tick, sent, store } = watching(signedIn)
+    store.save('s', { UserId: 'a', Name: 'Al', AccessToken: 't0' })
+
+    tick()
+    sent[0].answer(200, { Id: 'a', Name: 'Al', Policy: { IsAdministrator: true } })
+
+    assert.equal(store.list('s')[0].AccessToken, 't1')
+})
+
+test('an administrator whose sign-in was not saved is not asked about again until it signs in again', () => {
+    const storage = memoryStorage()
+    storage.setItem('quickswitch', JSON.stringify({ servers: {}, declined: {} }))
+    const signedIn = { serverId: 's', userId: 'a', token: 't1' }
+    const first = watching(signedIn, undefined, storage)
+    // Don't save, as the question records it: a hash of the token, never the token.
+    let hash = 0
+    for (const c of 't1') { hash = (hash * 31 + c.charCodeAt(0)) % 2147483647 }
+    storage.setItem('quickswitch', JSON.stringify({ servers: {}, declined: { 's|a': String(hash) } }))
+    assert.equal(storage.getItem('quickswitch').indexOf('"t1"'), -1)
+
+    first.tick()
+    assert.equal(first.sent.length, 0)
+
+    signedIn.token = 't2'
+    first.tick()
+    assert.equal(first.sent.length, 1)
 })
