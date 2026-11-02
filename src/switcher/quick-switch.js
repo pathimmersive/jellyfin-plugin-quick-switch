@@ -36,6 +36,44 @@
     var CREDENTIALS = 'jellyfin_credentials';
     var KEY = { escape: 27, back: 461, tizenBack: 10009, browserBack: 166, red: 403, enter: 13, space: 32, left: 37, up: 38, right: 39, down: 40, tab: 9 };
 
+    // State -------------------------------------------------------------------
+    // What the switcher remembers while the page is open. The saved accounts
+    // themselves are in the store below.
+    // The last sign-in seen, as server, user, token and address, so the server is asked about each one once.
+    var lastSeen = '';
+    // Who was signed in at the last look, to notice jellyfin-web's own Sign Out.
+    var wasSignedIn = null;
+    // Whether this load has run the sign-out check left by the last one.
+    var checkedSignOut = false;
+    // The switcher's element while it is open.
+    var overlay = null;
+    // What the switcher shows: pick, manage, move, add, confirm or ask.
+    var mode = 'pick';
+    // The element that opened the switcher, where focus returns when it closes.
+    var opener = null;
+    // The account being moved in Manage Accounts: who, from where, and how many tiles fit on a row.
+    var moving = null;
+    // A mouse or touch drag in progress.
+    var drag = null;
+    // When the last drag ended, so the click that ends it doesn't pick the tile up.
+    var dragEnded = 0;
+    // Whether a remove is waiting for the server.
+    var removing = false;
+    // An add in progress: the account to return to, which card was chosen, and how far it has got.
+    var adding = null;
+    // The account being signed back in after Back while adding.
+    var returning = null;
+    // Whether a switch is in progress.
+    var switching = false;
+    // The timer that takes the toast away.
+    var toastTimer = null;
+    // Whether a key was pressed since the page loaded, so start-up focus leaves it alone.
+    var keyPressed = false;
+    // The element jellyfin-web focused under the switcher, where focus goes when it closes.
+    var lastFocus = null;
+
+    // Store -------------------------------------------------------------------
+
     // Saved accounts, per server, in this browser's localStorage. Only accounts
     // that signed in on this device are ever saved.
 
@@ -244,6 +282,8 @@
         return { initial: name.charAt(0).toUpperCase(), color: colorFor(account && account.UserId), imageUrl: url };
     }
 
+    // Server calls and sign-ins -----------------------------------------------
+
     // jellyfin-web's ApiClient, once it exists.
 
     function client() {
@@ -294,12 +334,6 @@
 
     // Whoever signs in on this device is saved, or their token replaced. The
     // server is asked only when the signed-in user or token changes.
-    var lastSeen = '';
-
-    // Who was signed in at the last look, to notice jellyfin-web's own Sign
-    // Out; and whether this load has run the sign-out check left by the last.
-    var wasSignedIn = null;
-    var checkedSignOut = false;
 
     // An account that signed out with jellyfin-web's Sign Out leaves the
     // switcher too, once the server rejects its saved token. No answer leaves
@@ -392,184 +426,23 @@
         });
     }
 
-    // The switcher overlay.
+    // Views -------------------------------------------------------------------
 
-    var CSS = ''
-        + '#quickswitch{position:fixed;top:0;right:0;bottom:0;left:0;z-index:100000;display:flex;align-items:center;justify-content:center;'
-        + 'background:rgba(16,16,16,.86);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);color:rgba(255,255,255,.7);font-family:inherit;}'
-        + '#quickswitch *{box-sizing:border-box;}'
-        + '#quickswitch .qs-panel{display:flex;flex-direction:column;align-items:center;max-width:100%;max-height:100%;overflow:auto;padding:36px 24px;text-align:center;}'
-        + '#quickswitch h1{margin:0;font-size:30px;font-weight:400;color:#fff;}'
-        + '#quickswitch .qs-sub{margin:8px 0 0;font-size:15px;}'
-        + '#quickswitch .qs-row{display:flex;flex-wrap:wrap;justify-content:center;align-items:flex-start;margin:34px 0 18px;max-width:1040px;}'
-        + '#quickswitch .qs-tile{display:flex;flex-direction:column;align-items:center;width:180px;margin:0 14px 30px;padding:0;border:0;background:none;color:inherit;font:inherit;cursor:pointer;outline:none;}'
-        + '#quickswitch .qs-avatar{position:relative;display:flex;align-items:center;justify-content:center;width:164px;height:164px;border-radius:50%;'
-        + 'transition:transform .16s ease-out,box-shadow .16s ease-out;}'
-        + '#quickswitch .qs-avatar img{width:100%;height:100%;border-radius:50%;object-fit:cover;}'
-        + '#quickswitch .qs-initial{font-size:72px;font-weight:500;line-height:1;color:#fff;}'
-        + '#quickswitch .qs-tile:focus .qs-avatar,#quickswitch .qs-tile:hover .qs-avatar{-webkit-transform:scale(1.08);transform:scale(1.08);'
-        + 'box-shadow:0 0 0 5px ' + ACCENT + ',0 14px 36px rgba(0,0,0,.55);}'
-        + '#quickswitch .qs-name{margin-top:12px;font-size:18px;}'
-        + '#quickswitch .qs-tile:focus .qs-name,#quickswitch .qs-tile:hover .qs-name{color:#fff;font-weight:600;}'
-        + '#quickswitch .qs-tag{margin-top:4px;font-size:14px;color:' + ACCENT + ';}'
-        + '#quickswitch .qs-badge{position:absolute;right:2%;bottom:2%;display:flex;align-items:center;justify-content:center;width:36px;height:36px;'
-        + 'border-radius:50%;background:' + ACCENT + ';box-shadow:0 0 0 4px #101010;}'
-        + '#quickswitch .qs-add .qs-avatar{background:#292929;}'
-        + '#quickswitch .qs-button{display:flex;align-items:center;padding:10px 20px;border:0;border-radius:4px;background:#424242;color:rgba(255,255,255,.87);'
-        + 'font:inherit;font-size:15px;font-weight:600;cursor:pointer;outline:none;}'
-        + '#quickswitch .qs-button svg{margin-right:10px;}'
-        + '#quickswitch .qs-button:focus,#quickswitch .qs-button:hover{background:' + ACCENT + ';color:rgba(0,0,0,.87);}'
-        + '#quickswitch .qs-close{position:absolute;top:16px;right:16px;display:flex;align-items:center;justify-content:center;width:48px;height:48px;'
-        + 'padding:0;border:0;border-radius:50%;background:none;cursor:pointer;outline:none;}'
-        + '#quickswitch .qs-close:focus,#quickswitch .qs-close:hover{background:rgba(255,255,255,.12);}'
-        + '#quickswitch .qs-hints{position:absolute;right:42px;bottom:28px;display:flex;align-items:center;font-size:16px;}'
-        + '#quickswitch .qs-hints>span{display:flex;align-items:center;margin-left:24px;}'
-        + '#quickswitch .qs-key{margin-right:8px;padding:2px 8px;border-radius:4px;background:#292929;color:rgba(255,255,255,.87);font-weight:600;}'
-        + '#quickswitch .qs-red{width:16px;height:16px;margin-right:8px;border-radius:50%;background:#e53935;}'
-        + '#quickswitch.qs-tv h1{font-size:36px;}'
-        + '#quickswitch.qs-tv .qs-sub{font-size:20px;}'
-        + '#quickswitch.qs-tv .qs-row{margin:48px 0 18px;}'
-        + '#quickswitch.qs-tv .qs-name{font-size:22px;}'
-        + '#quickswitch.qs-tv .qs-tag{font-size:17px;}'
-        + '#quickswitch.qs-tv .qs-button{padding:14px 26px;font-size:20px;}'
-        // The keys sit at the bottom of the screen: a list longer than the screen scrolls in the space above
-        // them (with the same band left at the top, so the panel stays centred), never underneath them.
-        + '#quickswitch.qs-tv.qs-long .qs-panel{max-height:calc(100% - 140px);}'
-        + '#quickswitch.qs-many .qs-avatar{width:132px;height:132px;}'
-        + '#quickswitch.qs-many .qs-initial{font-size:58px;}'
-        + '#quickswitch.qs-many .qs-tile{width:150px;}'
-        + '#quickswitch .qs-splash{display:flex;flex-direction:column;align-items:center;}'
-        + '#quickswitch .qs-ring{position:relative;display:flex;align-items:center;justify-content:center;width:236px;height:236px;margin-bottom:28px;}'
-        + '#quickswitch .qs-ring:before{content:"";position:absolute;top:0;right:0;bottom:0;left:0;border-radius:50%;border:5px solid #292929;'
-        + 'border-top-color:' + ACCENT + ';-webkit-animation:qs-spin 1.1s linear infinite;animation:qs-spin 1.1s linear infinite;}'
-        + '#quickswitch .qs-ring .qs-avatar{width:196px;height:196px;}'
-        + '#quickswitch .qs-ring .qs-initial{font-size:88px;}'
-        + '#quickswitch .qs-hi{margin:0;font-size:30px;font-weight:400;color:#fff;}'
-        + '#quickswitch.qs-tv .qs-hi{font-size:36px;}'
-        + '@-webkit-keyframes qs-spin{to{-webkit-transform:rotate(360deg);}}@keyframes qs-spin{to{transform:rotate(360deg);}}'
-        + '.qs-toast{position:fixed;left:24px;bottom:24px;z-index:100001;display:flex;align-items:center;max-width:80%;padding:10px 20px 10px 10px;'
-        + 'border-radius:4px;background:#303030;color:#fff;font-size:15px;box-shadow:0 6px 18px rgba(0,0,0,.45);}'
-        + '.qs-toast.qs-plain{padding-left:20px;}'
-        + '.qs-toast .qs-mini{display:flex;flex:none;align-items:center;justify-content:center;width:32px;height:32px;margin-right:12px;border-radius:50%;'
-        + 'overflow:hidden;color:#fff;font-size:15px;font-weight:600;}'
-        + '.qs-toast .qs-mini img{width:100%;height:100%;object-fit:cover;}'
-        + '.qs-toast svg{flex:none;margin-right:12px;}'
-        + '.layout-tv .qs-toast{font-size:20px;}'
-        // Above the remove buttons and labels, which sit on their own layer.
-        + '#quickswitch .qs-scrim{position:absolute;top:0;right:0;bottom:0;left:0;z-index:10;display:flex;align-items:center;justify-content:center;padding:16px;'
-        + 'background:rgba(0,0,0,.7);}'
-        + '#quickswitch .qs-dialog{display:flex;flex-direction:column;width:580px;max-width:100%;padding:36px 32px 24px;border-radius:12px;background:#202020;'
-        + 'box-shadow:0 30px 80px rgba(0,0,0,.7);text-align:center;}'
-        + '#quickswitch .qs-dialog-icon{display:flex;align-self:center;align-items:center;justify-content:center;width:64px;height:64px;margin-bottom:16px;'
-        + 'border-radius:50%;background:#292929;}'
-        + '#quickswitch .qs-dialog h2{margin:0 0 14px;font-size:28px;font-weight:600;color:#fff;}'
-        + '#quickswitch .qs-dialog p{margin:0 0 24px;font-size:17px;line-height:1.5;}'
-        + '#quickswitch .qs-card{display:flex;align-items:center;margin:0 0 14px;padding:18px 22px;border:0;border-radius:10px;background:#292929;color:#fff;'
-        + 'font:inherit;text-align:left;cursor:pointer;outline:none;transition:background .15s,box-shadow .15s;}'
-        + '#quickswitch .qs-card:focus,#quickswitch .qs-card:hover{background:#fff;color:#101010;box-shadow:0 0 0 3px #202020,0 0 0 7px ' + ACCENT + ';}'
-        + '#quickswitch .qs-card-badge{display:flex;flex:none;align-items:center;justify-content:center;width:48px;height:48px;margin-right:18px;'
-        + 'border-radius:50%;background:#383838;color:rgba(255,255,255,.87);}'
-        + '#quickswitch .qs-card:focus .qs-card-badge,#quickswitch .qs-card:hover .qs-card-badge{background:' + ACCENT + ';color:rgba(0,0,0,.87);}'
-        + '#quickswitch .qs-card-title{display:block;font-size:19px;font-weight:600;}'
-        + '#quickswitch .qs-card-sub{display:block;margin-top:3px;font-size:15px;color:rgba(255,255,255,.7);}'
-        + '#quickswitch .qs-card:focus .qs-card-sub,#quickswitch .qs-card:hover .qs-card-sub{color:#4a4a4a;}'
-        + '#quickswitch .qs-cancel{align-self:center;margin-top:6px;padding:10px 28px;border:0;border-radius:4px;background:none;color:rgba(255,255,255,.87);'
-        + 'font:inherit;font-size:17px;font-weight:600;cursor:pointer;outline:none;}'
-        + '#quickswitch .qs-cancel:focus,#quickswitch .qs-cancel:hover{background:rgba(255,255,255,.12);}'
-        + '#quickswitch .qs-stale .qs-avatar{background:#333 !important;}'
-        + '#quickswitch .qs-stale .qs-avatar img{opacity:.35;}'
-        + '#quickswitch .qs-stale .qs-initial{color:#8a8a8a;}'
-        + '#quickswitch .qs-stale .qs-tag{color:rgba(255,255,255,.7);}'
-        + '#quickswitch .qs-lock{background:#424242;}'
-        + '.qs-notice .qs-mini.qs-locked{background:#333 !important;}'
-        // Manage Accounts: each tile sits in a slot with its move badge, its
-        // remove button on the circle's edge at 45 degrees, and the arrows
-        // shown while it is being moved.
-        + '#quickswitch .qs-slot{position:relative;margin:0 14px 30px;}'
-        + '#quickswitch .qs-slot .qs-tile{margin:0;}'
-        + '#quickswitch.qs-manage .qs-tile{touch-action:none;}'
-        + '#quickswitch .qs-move{position:absolute;left:2%;bottom:2%;display:flex;align-items:center;justify-content:center;width:36px;height:36px;'
-        + 'border-radius:50%;background:#303030;box-shadow:0 0 0 4px #101010;}'
-        + '#quickswitch .qs-cover{position:absolute;top:0;right:0;bottom:0;left:0;display:none;align-items:center;justify-content:center;'
-        + 'border-radius:50%;background:rgba(0,0,0,.55);}'
-        + '#quickswitch .qs-tile:focus .qs-cover,#quickswitch .qs-tile:hover .qs-cover{display:flex;}'
-        + '#quickswitch .qs-tile:focus .qs-move,#quickswitch .qs-tile:hover .qs-move{display:none;}'
-        + '#quickswitch .qs-bin{position:absolute;top:-2px;left:122px;z-index:2;display:none;align-items:center;justify-content:center;width:52px;height:52px;'
-        + 'padding:0;border:0;border-radius:50%;background:#303030;color:#fff;box-shadow:0 0 0 4px #101010;cursor:pointer;outline:none;}'
-        + '#quickswitch .qs-slot.qs-show .qs-bin,#quickswitch .qs-slot:hover .qs-bin{display:flex;-webkit-animation:qs-pop .12s ease-out;animation:qs-pop .12s ease-out;}'
-        + '#quickswitch .qs-bin:focus{background:#fff;color:#d32f2f;box-shadow:0 0 0 4px #101010,0 0 0 8px ' + ACCENT + ';}'
-        + '#quickswitch .qs-bin.qs-off{background:#1e1e1e;color:#6b6b6b;cursor:default;}'
-        + '#quickswitch .qs-bin.qs-off:focus{background:#2a2a2a;box-shadow:0 0 0 4px #101010,0 0 0 7px #6b6b6b;}'
-        // Ends where the remove button ends and wraps, so a long label stays
-        // within the tile's own space and never makes the panel scroll.
-        + '#quickswitch .qs-bin-label{position:absolute;right:6px;bottom:100%;z-index:3;display:none;max-width:200px;margin-bottom:8px;padding:4px 10px;'
-        + 'border-radius:4px;background:#fff;color:#101010;font-size:15px;font-weight:600;line-height:1.3;text-align:center;}'
-        + '#quickswitch .qs-bin:focus+.qs-bin-label,#quickswitch .qs-bin:hover+.qs-bin-label{display:block;}'
-        + '#quickswitch .qs-step{position:absolute;top:60px;z-index:2;display:none;align-items:center;justify-content:center;width:44px;height:44px;padding:0;'
-        + 'border:0;border-radius:50%;background:#fff;color:#101010;cursor:pointer;outline:none;}'
-        + '#quickswitch .qs-step[disabled]{background:#2a2a2a;color:#555;cursor:default;}'
-        + '#quickswitch .qs-step-left{left:-14px;}#quickswitch .qs-step-right{right:-14px;}'
-        + '#quickswitch .qs-lifted .qs-step{display:flex;}'
-        + '#quickswitch .qs-lifted .qs-bin,#quickswitch .qs-lifted .qs-move,#quickswitch .qs-lifted .qs-cover{display:none !important;}'
-        + '#quickswitch .qs-lifted .qs-avatar{-webkit-transform:translateY(-14px) scale(1.14);transform:translateY(-14px) scale(1.14);'
-        + 'box-shadow:0 0 0 5px ' + ACCENT + ',0 26px 50px rgba(0,0,0,.75);}'
-        + '#quickswitch .qs-lifted .qs-name{color:#fff;font-weight:600;}'
-        + '#quickswitch.qs-moving [data-qs-action="manage"]{opacity:.35;}'
-        + '#quickswitch .qs-settle{-webkit-animation:qs-settle .22s ease-out;animation:qs-settle .22s ease-out;}'
-        + '#quickswitch.qs-manage .qs-row,#quickswitch.qs-tv.qs-manage .qs-row{margin-top:66px;}'
-        + '#quickswitch.qs-many .qs-bin{top:-3px;left:100px;width:44px;height:44px;}'
-        + '#quickswitch.qs-many .qs-step{top:44px;}'
-        + '#quickswitch .qs-live{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);}'
-        + '@-webkit-keyframes qs-pop{from{-webkit-transform:scale(.6);opacity:0;}}@keyframes qs-pop{from{transform:scale(.6);opacity:0;}}'
-        + '@-webkit-keyframes qs-settle{0%{-webkit-transform:translateY(-14px) scale(1.14);}60%{-webkit-transform:scale(.96);}}'
-        + '@keyframes qs-settle{0%{transform:translateY(-14px) scale(1.14);}60%{transform:scale(.96);}}'
-        + '@media (prefers-reduced-motion:reduce){#quickswitch *{-webkit-transition:none !important;transition:none !important;'
-        + '-webkit-animation:none !important;animation:none !important;}}'
-        + '#quickswitch .qs-confirm{width:560px;padding:36px 32px 28px;border-radius:4px;box-shadow:0 8px 30px rgba(0,0,0,.6);}'
-        + '#quickswitch .qs-confirm .qs-avatar{align-self:center;width:96px;height:96px;margin-bottom:18px;}'
-        + '#quickswitch .qs-confirm .qs-initial{font-size:44px;}'
-        + '#quickswitch .qs-confirm h2{font-weight:400;margin-bottom:18px;}'
-        + '#quickswitch .qs-confirm p{margin-bottom:26px;}'
-        + '#quickswitch .qs-wide{display:block;width:100%;margin-top:10px;padding:16px;font-size:18px;text-align:center;}'
-        + '.qs-notice-row{display:flex;justify-content:center;margin:0 0 22px;}'
-        + '.qs-notice{display:flex;align-items:center;padding:8px 16px 8px 8px;border-radius:4px;background:#202020;color:rgba(255,255,255,.87);font-size:17px;text-align:left;}'
-        + '.qs-notice .qs-mini{display:flex;flex:none;align-items:center;justify-content:center;width:30px;height:30px;margin-right:12px;border-radius:50%;'
-        + 'overflow:hidden;color:#fff;font-size:14px;font-weight:600;}'
-        + '.qs-notice .qs-mini img{width:100%;height:100%;object-fit:cover;}'
-        + '.dialog .qs-notice-row{margin:1em 0 0;}'
-        + '[data-qs-entry="menu"] .MuiListItemText-primary{white-space:nowrap;}'
-        + '.qs-stack{display:flex;flex:none;align-items:center;margin-left:16px;}'
-        + '.qs-stack .qs-dot{display:block;width:18px;height:18px;margin-left:-6px;border-radius:50%;overflow:hidden;box-shadow:0 0 0 2px #383838;}'
-        + '.qs-stack .qs-dot:first-child{margin-left:0;}'
-        + '.qs-stack .qs-dot img{display:block;width:100%;height:100%;object-fit:cover;}'
-        + '.qs-stack .qs-initial{display:none;}'
-        + '[data-qs-entry="settings"] .listItem{display:flex;align-items:center;}'
-        + '[data-qs-entry="settings"] .listItemBody{flex:1;}'
-        + '[data-qs-entry="settings"] .qs-stack{padding-right:10px;}'
-        + '[data-qs-entry="settings"] .qs-dot{width:26px;height:26px;margin-left:-8px;box-shadow:0 0 0 2px #101010;}'
-        + '[data-qs-entry="settings"]:focus .qs-dot{box-shadow:0 0 0 2px ' + ACCENT + ';}'
-        + '@media (max-width:600px){#quickswitch .qs-row{max-width:300px;}#quickswitch .qs-tile{width:120px;margin:0 15px 26px;}'
-        + '#quickswitch .qs-avatar{width:104px;height:104px;}#quickswitch .qs-initial{font-size:46px;}#quickswitch h1{font-size:26px;}'
-        + '#quickswitch .qs-name{font-size:16px;}#quickswitch .qs-slot{margin:0 15px 26px;}'
-        // A phone has no focus to follow, so every remove button shows.
-        + '#quickswitch.qs-manage .qs-bin{display:flex;top:-7px;left:75px;width:44px;height:44px;}#quickswitch .qs-bin-label{right:1px;max-width:140px;margin-bottom:12px;}'
-        + '#quickswitch .qs-move{width:30px;height:30px;}#quickswitch .qs-step{top:30px;}'
-        // Phone sizes win over the smaller tiles for more than four accounts.
-        + '#quickswitch.qs-many .qs-tile{width:120px;}#quickswitch.qs-many .qs-avatar{width:104px;height:104px;}#quickswitch.qs-many .qs-initial{font-size:46px;}'
-        + '#quickswitch.qs-many.qs-manage .qs-bin{top:-7px;left:75px;}#quickswitch.qs-many .qs-step{top:30px;}}';
-
-    var overlay = null;
-    var mode = 'pick';
-    var opener = null;
+    // The styles are quick-switch.css, beside this script on the server, with
+    // the same version, so they work under any BaseUrl and are cached alike.
+    var STYLESHEET = typeof document !== 'undefined' && document.currentScript && document.currentScript.src
+        ? document.currentScript.src.replace(/quick-switch\.js(\?|$)/, 'quick-switch.css$1')
+        : '../QuickSwitch/quick-switch.css?v=' + VERSION;
 
     function addStyles() {
         if (document.getElementById('quickswitch-style')) {
             return;
         }
-        var style = document.createElement('style');
-        style.id = 'quickswitch-style';
-        style.textContent = CSS;
-        document.head.appendChild(style);
+        var link = document.createElement('link');
+        link.id = 'quickswitch-style';
+        link.rel = 'stylesheet';
+        link.href = STYLESHEET;
+        document.head.appendChild(link);
     }
 
     function el(tag, className, text) {
@@ -865,12 +738,11 @@
         updateHints();
     }
 
+    // Moving accounts ---------------------------------------------------------
+
     // Moving a tile in Manage Accounts: it is picked up, the arrows (or its
     // arrow buttons, or a drag) move it while the others make room, and OK or
     // selecting it again puts it down and saves the order. Back puts it back.
-    var moving = null;
-    var drag = null;
-    var dragEnded = 0;
 
     function slotList() {
         return overlay ? Array.prototype.slice.call(overlay.querySelectorAll('.qs-slot')) : [];
@@ -1106,6 +978,8 @@
         }
     }
 
+    // Dialogs and removing ----------------------------------------------------
+
     // In Manage Accounts Up reaches the focused tile's remove button, Down
     // returns to the tile, and Left and Right move along the remove buttons.
     function manageArrow(code) {
@@ -1273,7 +1147,6 @@
     // Revokes the removed account's own token, so it stops working on the
     // server, then forgets it; the account signed in is never touched. A 401
     // means the token already no longer works. Any other failure asks first.
-    var removing = false;
 
     function removeAccount(account) {
         var now = signedIn();
@@ -1310,9 +1183,10 @@
         }
     }
 
+    // Adding an account -------------------------------------------------------
+
     // Adding an account signs the current one out on this device only: its
     // token is kept in the store, never revoked, and comes back on Back.
-    var adding = null;
 
     // again, when given, is a saved account whose sign-in stopped working:
     // the sign-in page opens for that account.
@@ -1577,7 +1451,6 @@
 
     // Back while adding: Who's watching? covers the page at once, with the
     // previous account marked, while that account is signed in again under it.
-    var returning = null;
 
     function cancelAdd() {
         var previous = adding.previous;
@@ -1684,12 +1557,180 @@
         }
     }
 
+    function onAddingKey(event) {
+        if (adding && !overlay && isBackKey(event) && visibleLogin()) {
+            event.preventDefault();
+            event.stopPropagation();
+            cancelAdd();
+        }
+    }
+
+    // The browser's own Back leaves the sign-in page with nobody signed in.
+    // The route is read as it changes: jellyfin-web sends a signed-out
+    // browser back to the sign-in page a moment later. Closing jellyfin-web's
+    // Quick Connect dialog also goes back, but stays on the sign-in route.
+    function onAddingRoute() {
+        if (!adding || /login/.test(window.location.hash)) {
+            return;
+        }
+        window.setTimeout(function () {
+            if (adding && !signedIn()) {
+                cancelAdd();
+            }
+        }, 0);
+    }
+
+    // Switching and notices ---------------------------------------------------
+
+    // Bottom-left notice in jellyfin-web's toast style; with an account it shows that account's avatar.
+
+    function toast(text, account, isError) {
+        var old = document.querySelector('.qs-toast');
+        if (old) {
+            old.parentNode.removeChild(old);
+        }
+        window.clearTimeout(toastTimer);
+        addStyles();
+        var box = el('div', 'qs-toast' + (account || isError ? '' : ' qs-plain'));
+        box.setAttribute('role', 'status');
+        if (isError) {
+            box.appendChild(icon('error', 22, '#ff8a80'));
+        } else if (account) {
+            box.appendChild(avatarCircle(account, serverAddress(), 'qs-mini'));
+        }
+        box.appendChild(el('span', null, text));
+        document.body.appendChild(box);
+        toastTimer = window.setTimeout(function () {
+            if (box.parentNode) {
+                box.parentNode.removeChild(box);
+            }
+        }, 4000);
+    }
+
+    function navigate(route) {
+        if (window.Dashboard && typeof window.Dashboard.navigate === 'function') {
+            window.Dashboard.navigate(route);
+        } else {
+            window.location.hash = '#/' + route;
+        }
+    }
+
+    // jellyfin-web rebuilds the home screen only when it is shown after another
+    // view, so show the preferences menu (static, no requests of its own) and go
+    // home as soon as it is up. done() runs once home is shown.
+    function showHomeAgain(done) {
+        var stage = 'via';
+        var onShow;
+        var finish = function () {
+            if (stage === 'done') {
+                return;
+            }
+            stage = 'done';
+            document.removeEventListener('viewshow', onShow);
+            done();
+        };
+        onShow = function (event) {
+            var home = event.target && event.target.id === 'indexPage';
+            if (stage === 'via' && !home) {
+                stage = 'home';
+                navigate('home');
+            } else if (stage === 'home' && home) {
+                finish();
+            }
+        };
+        document.addEventListener('viewshow', onShow);
+        window.setTimeout(function () {
+            if (stage === 'via') {
+                stage = 'home';
+                navigate('home');
+            }
+        }, 2000);
+        window.setTimeout(finish, 6000);
+        navigate('mypreferencesmenu');
+    }
+
+    function splash(account) {
+        overlay.innerHTML = '';
+        var box = el('div', 'qs-splash');
+        var ring = el('div', 'qs-ring');
+        ring.appendChild(avatarCircle(account, serverAddress(), 'qs-avatar'));
+        box.appendChild(ring);
+        box.appendChild(el('p', 'qs-hi', 'Hi, ' + account.Name));
+        overlay.appendChild(box);
+    }
+
+    function nameOf(serverId, userId) {
+        var saved = list(serverId);
+        var at = indexOf(saved, userId);
+        return at === -1 ? '' : saved[at].Name;
+    }
+
+    // Signs jellyfin-web in as a saved account in place: never a reload, which
+    // would drop the webOS app's NativeShell.
+
+    function pick(account) {
+        var now = signedIn();
+        if (!now || switching) {
+            return;
+        }
+        if (account.UserId === now.userId) {
+            toast('Already watching as ' + account.Name, account);
+            return;
+        }
+        var c = client();
+        if (typeof c.onAuthenticated !== 'function') {
+            toast('This version of jellyfin-web can\u2019t switch accounts in place.', null, true);
+            return;
+        }
+        if (account.Stale || !knownAt(account, serverAddress())) {
+            startAdd(false, account);
+            return;
+        }
+        switching = true;
+        var started = new Date().getTime();
+        splash(account);
+        var back = function (message) {
+            switching = false;
+            if (overlay) {
+                render();
+            }
+            toast(message, null, true);
+        };
+        request('GET', 'Users/Me', account.AccessToken, function (status, user) {
+            if (status === 0) {
+                back('Can\u2019t reach the server right now. You\u2019re still watching as ' + nameOf(now.serverId, now.userId) + '.');
+                return;
+            }
+            if (status !== 200 || !user || user.Id !== account.UserId) {
+                switching = false;
+                markStale(now.serverId, account.UserId);
+                account.Stale = true;
+                startAdd(false, account);
+                return;
+            }
+            var fresh = { UserId: user.Id, Name: user.Name, AccessToken: account.AccessToken, PrimaryImageTag: user.PrimaryImageTag };
+            save(now.serverId, fresh);
+            var arrived = function () {
+                var wait = Math.max(0, SPLASH_MS - (new Date().getTime() - started));
+                window.setTimeout(function () {
+                    switching = false;
+                    close();
+                    toast('Now watching as ' + fresh.Name, fresh);
+                }, wait);
+            };
+            signInInPlace(user, account.AccessToken, now.serverId, arrived, function () {
+                back('Couldn\u2019t switch to ' + account.Name + '.');
+            });
+        });
+    }
+
+    // Keys and focus ----------------------------------------------------------
+
     // On an LG TV the remote's keys reach the page only once something in it
     // has focus. jellyfin-web focuses a card on a home screen with libraries;
     // with none, nothing is focused and the remote does nothing, red button
     // included. So at start-up in the TV layout, when a page has been showing
     // for a few seconds with nothing focused, focus goes to the header.
-    var keyPressed = false;
 
     function onFirstKey() {
         keyPressed = true;
@@ -1748,172 +1789,6 @@
     function isBackKey(event) {
         var code = event.keyCode;
         return code === KEY.escape || code === KEY.back || code === KEY.tizenBack || code === KEY.browserBack || event.key === 'GoBack';
-    }
-
-    function onAddingKey(event) {
-        if (adding && !overlay && isBackKey(event) && visibleLogin()) {
-            event.preventDefault();
-            event.stopPropagation();
-            cancelAdd();
-        }
-    }
-
-    // The browser's own Back leaves the sign-in page with nobody signed in.
-    // The route is read as it changes: jellyfin-web sends a signed-out
-    // browser back to the sign-in page a moment later. Closing jellyfin-web's
-    // Quick Connect dialog also goes back, but stays on the sign-in route.
-    function onAddingRoute() {
-        if (!adding || /login/.test(window.location.hash)) {
-            return;
-        }
-        window.setTimeout(function () {
-            if (adding && !signedIn()) {
-                cancelAdd();
-            }
-        }, 0);
-    }
-
-    // Bottom-left notice in jellyfin-web's toast style; with an account it shows that account's avatar.
-    var toastTimer = null;
-
-    function toast(text, account, isError) {
-        var old = document.querySelector('.qs-toast');
-        if (old) {
-            old.parentNode.removeChild(old);
-        }
-        window.clearTimeout(toastTimer);
-        addStyles();
-        var box = el('div', 'qs-toast' + (account || isError ? '' : ' qs-plain'));
-        box.setAttribute('role', 'status');
-        if (isError) {
-            box.appendChild(icon('error', 22, '#ff8a80'));
-        } else if (account) {
-            box.appendChild(avatarCircle(account, serverAddress(), 'qs-mini'));
-        }
-        box.appendChild(el('span', null, text));
-        document.body.appendChild(box);
-        toastTimer = window.setTimeout(function () {
-            if (box.parentNode) {
-                box.parentNode.removeChild(box);
-            }
-        }, 4000);
-    }
-
-    function navigate(route) {
-        if (window.Dashboard && typeof window.Dashboard.navigate === 'function') {
-            window.Dashboard.navigate(route);
-        } else {
-            window.location.hash = '#/' + route;
-        }
-    }
-
-    // jellyfin-web rebuilds the home screen only when it is shown after another
-    // view, so show the preferences menu (static, no requests of its own) and go
-    // home as soon as it is up. done() runs once home is shown.
-    function showHomeAgain(done) {
-        var stage = 'via';
-        var onShow = function (event) {
-            var home = event.target && event.target.id === 'indexPage';
-            if (stage === 'via' && !home) {
-                stage = 'home';
-                navigate('home');
-            } else if (stage === 'home' && home) {
-                finish();
-            }
-        };
-        var finish = function () {
-            if (stage === 'done') {
-                return;
-            }
-            stage = 'done';
-            document.removeEventListener('viewshow', onShow);
-            done();
-        };
-        document.addEventListener('viewshow', onShow);
-        window.setTimeout(function () {
-            if (stage === 'via') {
-                stage = 'home';
-                navigate('home');
-            }
-        }, 2000);
-        window.setTimeout(finish, 6000);
-        navigate('mypreferencesmenu');
-    }
-
-    function splash(account) {
-        overlay.innerHTML = '';
-        var box = el('div', 'qs-splash');
-        var ring = el('div', 'qs-ring');
-        ring.appendChild(avatarCircle(account, serverAddress(), 'qs-avatar'));
-        box.appendChild(ring);
-        box.appendChild(el('p', 'qs-hi', 'Hi, ' + account.Name));
-        overlay.appendChild(box);
-    }
-
-    function nameOf(serverId, userId) {
-        var saved = list(serverId);
-        var at = indexOf(saved, userId);
-        return at === -1 ? '' : saved[at].Name;
-    }
-
-    // Signs jellyfin-web in as a saved account in place: never a reload, which
-    // would drop the webOS app's NativeShell.
-    var switching = false;
-
-    function pick(account) {
-        var now = signedIn();
-        if (!now || switching) {
-            return;
-        }
-        if (account.UserId === now.userId) {
-            toast('Already watching as ' + account.Name, account);
-            return;
-        }
-        var c = client();
-        if (typeof c.onAuthenticated !== 'function') {
-            toast('This version of jellyfin-web can\u2019t switch accounts in place.', null, true);
-            return;
-        }
-        if (account.Stale || !knownAt(account, serverAddress())) {
-            startAdd(false, account);
-            return;
-        }
-        switching = true;
-        var started = new Date().getTime();
-        splash(account);
-        var back = function (message) {
-            switching = false;
-            if (overlay) {
-                render();
-            }
-            toast(message, null, true);
-        };
-        request('GET', 'Users/Me', account.AccessToken, function (status, user) {
-            if (status === 0) {
-                back('Can\u2019t reach the server right now. You\u2019re still watching as ' + nameOf(now.serverId, now.userId) + '.');
-                return;
-            }
-            if (status !== 200 || !user || user.Id !== account.UserId) {
-                switching = false;
-                markStale(now.serverId, account.UserId);
-                account.Stale = true;
-                startAdd(false, account);
-                return;
-            }
-            var fresh = { UserId: user.Id, Name: user.Name, AccessToken: account.AccessToken, PrimaryImageTag: user.PrimaryImageTag };
-            save(now.serverId, fresh);
-            var arrived = function () {
-                var wait = Math.max(0, SPLASH_MS - (new Date().getTime() - started));
-                window.setTimeout(function () {
-                    switching = false;
-                    close();
-                    toast('Now watching as ' + fresh.Name, fresh);
-                }, wait);
-            };
-            signInInPlace(user, account.AccessToken, now.serverId, arrived, function () {
-                back('Couldn\u2019t switch to ' + account.Name + '.');
-            });
-        });
     }
 
     // The controls of the top layer: the open dialog, else the switcher.
@@ -2087,7 +1962,6 @@
     // jellyfin-web focuses a page it shows under the switcher (the home
     // screen after a switch or a Back while adding). Focus stays in the
     // switcher, and that element is where it goes when the switcher closes.
-    var lastFocus = null;
 
     function onFocusIn(event) {
         var target = event.target;
@@ -2126,6 +2000,8 @@
         }
         opener = null;
     }
+
+    // Entry points ------------------------------------------------------------
 
     // Where the switcher opens from: an item in the desktop and
     // phone User Menu, a row in the TV settings page's User section, and the
@@ -2303,6 +2179,8 @@
             open();
         }
     }
+
+    // Start-up ----------------------------------------------------------------
 
     function start() {
         var queued = false;
