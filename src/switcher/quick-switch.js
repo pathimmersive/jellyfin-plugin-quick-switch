@@ -296,11 +296,68 @@
     // server is asked only when the signed-in user or token changes.
     var lastSeen = '';
 
-    function watch() {
-        var now = signedIn();
-        if (!now) {
+    // Who was signed in at the last look, to notice jellyfin-web's own Sign
+    // Out; and whether this load has run the sign-out check left by the last.
+    var wasSignedIn = null;
+    var checkedSignOut = false;
+
+    // An account that signed out with jellyfin-web's Sign Out leaves the
+    // switcher too, once the server rejects its saved token. No answer leaves
+    // the check for the next load; a token that still works keeps the account.
+    function markSignedOut(serverId, userId) {
+        var value = readStore();
+        value.signedOut = { serverId: serverId, userId: userId };
+        writeStore(value);
+        checkSignedOut();
+    }
+
+    function checkSignedOut() {
+        var value = readStore();
+        var pending = value.signedOut;
+        if (!pending || typeof pending !== 'object') {
             return;
         }
+        var clear = function () {
+            var latest = readStore();
+            delete latest.signedOut;
+            writeStore(latest);
+        };
+        var saved = list(pending.serverId);
+        var at = indexOf(saved, pending.userId);
+        if (at === -1 || !knownAt(saved[at], serverAddress())) {
+            clear();
+            return;
+        }
+        request('GET', 'Users/Me', saved[at].AccessToken, function (status) {
+            if (status === 0) {
+                return;
+            }
+            clear();
+            if (status === 401) {
+                forget(pending.serverId, pending.userId);
+            }
+        });
+    }
+
+    function watch() {
+        var now = signedIn();
+        if (!checkedSignOut && client()) {
+            checkedSignOut = true;
+            checkSignedOut();
+        }
+        if (!now) {
+            var before = wasSignedIn;
+            wasSignedIn = null;
+            if (before && !adding && !switching && !returning) {
+                var saved = list(before.serverId);
+                var at = indexOf(saved, before.userId);
+                if (at !== -1 && saved[at].AccessToken === before.token) {
+                    markSignedOut(before.serverId, before.userId);
+                }
+            }
+            return;
+        }
+        wasSignedIn = now;
         var here = serverAddress();
         var key = now.serverId + '|' + now.userId + '|' + now.token + '|' + addressKey(here);
         if (key === lastSeen) {
