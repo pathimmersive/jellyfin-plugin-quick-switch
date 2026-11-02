@@ -86,6 +86,12 @@ if [ -f README.md ]; then
     fi
 fi
 
+if grep -q 'acknowledged within 7 days' SECURITY.md 2>/dev/null; then
+    pass "SECURITY.md says how soon a report is acknowledged"
+else
+    fail "SECURITY.md does not say how soon a report is acknowledged"
+fi
+
 if [ "$missing" -gt 0 ]; then
     echo "check-community-files: $missing missing" >&2
     exit 1
