@@ -1076,9 +1076,67 @@
         keep.focus();
     }
 
+    // When Remove couldn't sign the account out on the server, nothing is
+    // forgotten until the user chooses. Keep shares the confirm's action, so
+    // Back keeps the account here too.
+    function showRemoveFailed(account) {
+        mode = 'confirm';
+        // An earlier "removed" toast would contradict the dialog.
+        var shown = document.querySelector('.qs-toast');
+        if (shown) {
+            shown.parentNode.removeChild(shown);
+        }
+        var scrim = el('div', 'qs-scrim');
+        var dialog = el('div', 'qs-dialog qs-confirm');
+        dialog.setAttribute('role', 'alertdialog');
+        dialog.setAttribute('aria-modal', 'true');
+        dialog.setAttribute('aria-label', 'Couldn’t sign ' + account.Name + ' out on the server');
+        dialog.appendChild(avatarCircle(account, serverAddress(), 'qs-avatar'));
+        dialog.appendChild(el('h2', null, 'Couldn’t sign ' + account.Name + ' out on the server'));
+        dialog.appendChild(el('p', null, 'The server didn’t answer. Try again once it can be reached. If you remove '
+            + account.Name + ' from ' + deviceWord() + ' only, their sign-in keeps working on the server until their password is changed.'));
+        var retry = el('button', 'qs-button qs-wide', 'Try again');
+        retry.type = 'button';
+        retry.setAttribute('data-qs-action', 'remove-retry');
+        retry.addEventListener('click', function () { removeAccount(account); });
+        var local = el('button', 'qs-button qs-wide', 'Remove from ' + deviceWord() + ' only');
+        local.type = 'button';
+        local.setAttribute('data-qs-action', 'remove-local');
+        local.addEventListener('click', function () { forgetAccount(account); });
+        var keep = el('button', 'qs-button qs-wide', 'Keep');
+        keep.type = 'button';
+        keep.setAttribute('data-qs-action', 'confirm-keep');
+        keep.addEventListener('click', function () { render('manage', 'bin:' + account.UserId); });
+        dialog.appendChild(retry);
+        dialog.appendChild(local);
+        dialog.appendChild(keep);
+        scrim.appendChild(dialog);
+        overlay.appendChild(scrim);
+        retry.focus();
+        updateHints();
+    }
+
+    // Forgets an account on this device; focus moves to the account that
+    // takes its place.
+    function forgetAccount(account) {
+        var now = signedIn();
+        if (!now) {
+            return;
+        }
+        var saved = list(now.serverId);
+        var at = indexOf(saved, account.UserId);
+        forget(now.serverId, account.UserId);
+        saved = list(now.serverId);
+        var next = saved[Math.min(at, saved.length - 1)];
+        if (overlay) {
+            render('manage', next ? next.UserId : 'manage');
+        }
+        toast(account.Name + ' removed from ' + deviceWord());
+    }
+
     // Revokes the removed account's own token, so it stops working on the
-    // server, then forgets it whatever the server said; the account signed in
-    // is never touched.
+    // server, then forgets it; the account signed in is never touched. A 401
+    // means the token already no longer works. Any other failure asks first.
     var removing = false;
 
     function removeAccount(account) {
@@ -1087,18 +1145,17 @@
             return;
         }
         removing = true;
-        request('POST', 'Sessions/Logout', account.AccessToken, function () {
+        request('POST', 'Sessions/Logout', account.AccessToken, function (status) {
             removing = false;
-            // Focus moves to the account that takes the removed one's place.
-            var saved = list(now.serverId);
-            var at = indexOf(saved, account.UserId);
-            forget(now.serverId, account.UserId);
-            saved = list(now.serverId);
-            var next = saved[Math.min(at, saved.length - 1)];
-            if (overlay) {
-                render('manage', next ? next.UserId : 'manage');
+            if ((status >= 200 && status < 300) || status === 401) {
+                forgetAccount(account);
+            } else if (overlay) {
+                var open = overlay.querySelector('.qs-scrim');
+                if (open) {
+                    open.parentNode.removeChild(open);
+                }
+                showRemoveFailed(account);
             }
-            toast(account.Name + ' removed from ' + deviceWord());
         });
     }
 
