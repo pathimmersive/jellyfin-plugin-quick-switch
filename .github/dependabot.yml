@@ -1,0 +1,16 @@
+version: 2
+updates:
+  # The Jellyfin packages are left out: building against a newer Jellyfin
+  # raises the oldest server the plugin runs on. The Canary workflow checks
+  # the newest Jellyfin each week instead.
+  - package-ecosystem: "nuget"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    ignore:
+      - dependency-name: "Jellyfin.*"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

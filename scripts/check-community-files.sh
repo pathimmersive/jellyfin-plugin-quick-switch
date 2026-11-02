@@ -2,7 +2,8 @@
 # Checks that the repository carries its community files, that the README
 # says the plugin is unofficial, that the issue chooser offers forms and the
 # question and private security routes, and that CHANGELOG.md has a section
-# for unreleased changes or a version.
+# for unreleased changes or a version. Also checks that new Jellyfin releases
+# are followed: Dependabot, the weekly canary, and the docs that describe them.
 #
 # Usage: scripts/check-community-files.sh
 #
@@ -50,7 +51,34 @@ else
     fail "CHANGELOG.md has no Unreleased or version section"
 fi
 
+dependabot=.github/dependabot.yml
+for ecosystem in nuget github-actions; do
+    if grep -q -E "package-ecosystem: *\"?$ecosystem\"?" "$dependabot" 2>/dev/null; then
+        pass "$dependabot updates $ecosystem"
+    else
+        fail "$dependabot does not update $ecosystem"
+    fi
+done
+
+canary=.github/workflows/canary.yml
+if grep -q -E '^ *- cron:' "$canary" 2>/dev/null && grep -q 'smoke-test.sh --latest' "$canary"; then
+    pass "$canary runs the smoke test on the newest Jellyfin on a schedule"
+else
+    fail "$canary does not run the smoke test on the newest Jellyfin on a schedule"
+fi
+
+if grep -q '^## Following Jellyfin releases' CONTRIBUTING.md 2>/dev/null; then
+    pass "CONTRIBUTING.md says how new Jellyfin releases are followed"
+else
+    fail "CONTRIBUTING.md has no Following Jellyfin releases section"
+fi
+
 if [ -f README.md ]; then
+    if grep -q 'within about a week' README.md; then
+        pass "README.md says how soon a new Jellyfin release is checked"
+    else
+        fail "README.md does not say how soon a new Jellyfin release is checked"
+    fi
     if grep -q -i 'unofficial' README.md; then
         pass "README.md says the plugin is unofficial"
     else

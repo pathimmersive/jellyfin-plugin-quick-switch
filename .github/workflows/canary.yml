@@ -1,0 +1,78 @@
+name: Canary
+
+# Checks the plugin against the newest Jellyfin and File Transformation each
+# week, so a new release that breaks it is noticed before users report it.
+# A failed scheduled or manual run opens an issue, or comments on the open one.
+
+on:
+  schedule:
+    - cron: "23 6 * * 1"
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/canary.yml
+      - scripts/latest-versions.sh
+      - scripts/smoke-test.sh
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+  DOTNET_NOLOGO: "1"
+
+jobs:
+  newest-jellyfin:
+    runs-on: ubuntu-24.04
+    outputs:
+      jellyfin: ${{ steps.versions.outputs.JELLYFIN_VERSION }}
+      image: ${{ steps.versions.outputs.JELLYFIN_IMAGE }}
+      file-transformation: ${{ steps.versions.outputs.FT_VERSION }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.x
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - name: Find the newest Jellyfin and File Transformation
+        id: versions
+        run: bash scripts/latest-versions.sh | tee -a "$GITHUB_OUTPUT"
+      - name: Test against the newest Jellyfin packages
+        env:
+          JELLYFIN_VERSION: ${{ steps.versions.outputs.JELLYFIN_VERSION }}
+        run: |
+          dotnet test -p:JellyfinVersion="$JELLYFIN_VERSION"
+          node --test "tests/switcher/*.test.js"
+      - name: Smoke test on the newest Jellyfin
+        run: bash scripts/smoke-test.sh --latest
+
+  report:
+    needs: newest-jellyfin
+    if: failure() && github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      issues: write
+    steps:
+      - name: Open or update the canary issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          JELLYFIN: ${{ needs.newest-jellyfin.outputs.jellyfin }}
+          IMAGE: ${{ needs.newest-jellyfin.outputs.image }}
+          FILE_TRANSFORMATION: ${{ needs.newest-jellyfin.outputs.file-transformation }}
+        run: |
+          title="Canary: checks fail on the newest Jellyfin"
+          body="$(printf '%s\n\n- Jellyfin packages: %s\n- Jellyfin image: %s\n- File Transformation: %s\n- Run: %s\n' \
+            "The weekly check against the newest Jellyfin failed." \
+            "${JELLYFIN:-not found}" "${IMAGE:-not found}" "${FILE_TRANSFORMATION:-not found}" "$RUN_URL")"
+          open="$(gh issue list --state open --search "\"$title\" in:title" --json number,title \
+            --jq "map(select(.title == \"$title\"))[0].number // empty")"
+          if [ -n "$open" ]; then
+            gh issue comment "$open" --body "$body"
+          else
+            gh issue create --title "$title" --body "$body"
+          fi
