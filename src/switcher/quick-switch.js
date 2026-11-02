@@ -299,6 +299,9 @@
         + '#quickswitch.qs-tv .qs-name{font-size:22px;}'
         + '#quickswitch.qs-tv .qs-tag{font-size:17px;}'
         + '#quickswitch.qs-tv .qs-button{padding:14px 26px;font-size:20px;}'
+        // The keys sit at the bottom of the screen: a list longer than the screen scrolls in the space above
+        // them (with the same band left at the top, so the panel stays centred), never underneath them.
+        + '#quickswitch.qs-tv.qs-long .qs-panel{max-height:calc(100% - 140px);}'
         + '#quickswitch.qs-many .qs-avatar{width:132px;height:132px;}'
         + '#quickswitch.qs-many .qs-initial{font-size:58px;}'
         + '#quickswitch.qs-many .qs-tile{width:150px;}'
@@ -659,9 +662,13 @@
         var row = el('div', 'qs-row');
         var focusFirst = null;
         var focusSlot = null;
+        var currentTile = null;
         for (var i = 0; i < accounts.length; i++) {
             var current = !!now && accounts[i].UserId === now.userId;
             var button = tile(accounts[i], current, server, managing, movable);
+            if (current) {
+                currentTile = button;
+            }
             var node = movable ? slot(button, accounts[i], current) : button;
             if (focusOn === 'bin:' + accounts[i].UserId && movable) {
                 focusSlot = node;
@@ -686,10 +693,17 @@
         manage.appendChild(document.createTextNode(managing ? 'Done' : 'Manage Accounts'));
         manage.addEventListener('click', function () { render(managing ? 'pick' : 'manage', 'manage'); });
         panel.appendChild(manage);
-        if (focusOn === 'manage') {
-            focusFirst = manage;
-        }
         overlay.appendChild(panel);
+        var long = panel.scrollHeight > panel.clientHeight;
+        if (long) {
+            overlay.className += ' qs-long';
+        }
+        if (focusOn === 'manage') {
+            // Done follows the list. When the list is longer than the screen, Manage Accounts opens at
+            // its top on the account signed in now instead of scrolling down to Done.
+            focusFirst = managing && currentTile && long ? currentTile : manage;
+            panel.scrollTop = 0;
+        }
 
         if (tv) {
             var hintBox = el('div', 'qs-hints');
