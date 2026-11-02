@@ -46,6 +46,7 @@ You need the .NET 10 SDK, Node.js 22 or later, and bash.
 dotnet test                            # builds the plugin and runs its tests
 node --test "tests/switcher/*.test.js" # switcher script tests
 bash scripts/check-community-files.sh  # community files
+bash scripts/coverage.sh               # both test suites, with a coverage summary
 ```
 
 `bash scripts/smoke-test.sh` also needs Docker. It loads the plugin into a real Jellyfin server, on its own, alongside [File Transformation](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) and under a BaseUrl, and checks what the server reports and serves. CI runs it on every pull request.
