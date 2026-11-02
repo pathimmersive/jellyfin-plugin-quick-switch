@@ -133,6 +133,30 @@
         }
     }
 
+    // An administrator who chose Don't save is not asked again for that
+    // sign-in; a new sign-in brings the question back. Only a hash of the
+    // token is kept.
+    function tokenMark(token) {
+        var hash = 0;
+        var text = String(token || '');
+        for (var i = 0; i < text.length; i++) {
+            hash = (hash * 31 + text.charCodeAt(i)) % 2147483647;
+        }
+        return String(hash);
+    }
+
+    function declineSave(serverId, userId, token) {
+        var value = readStore();
+        value.declined = value.declined && typeof value.declined === 'object' ? value.declined : {};
+        value.declined[serverId + '|' + userId] = tokenMark(token);
+        writeStore(value);
+    }
+
+    function declinedSave(serverId, userId, token) {
+        var value = readStore();
+        return !!value.declined && value.declined[serverId + '|' + userId] === tokenMark(token);
+    }
+
     function forget(serverId, userId) {
         var value = readStore();
         var accounts = value.servers[serverId] instanceof Array ? value.servers[serverId] : [];
@@ -246,9 +270,18 @@
         if (at !== -1 && saved[at].AccessToken === now.token && saved[at].Name) {
             return;
         }
+        if (at === -1 && declinedSave(now.serverId, now.userId, now.token)) {
+            return;
+        }
         request('GET', 'Users/Me', now.token, function (status, user) {
             if (status === 200 && user && user.Id === now.userId) {
                 var account = { UserId: user.Id, Name: user.Name, AccessToken: now.token, PrimaryImageTag: user.PrimaryImageTag };
+                // An administrator is saved only when someone chooses to: anyone
+                // using the device could then manage the server.
+                if (at === -1 && user.Policy && user.Policy.IsAdministrator) {
+                    askSaveAdmin(account, now.serverId);
+                    return;
+                }
                 save(now.serverId, account);
                 if (adding) {
                     added(account);
@@ -596,6 +629,9 @@
         }
         if (mode === 'confirm') {
             return [['OK', 'Select'], ['BACK', 'Cancel']];
+        }
+        if (mode === 'ask') {
+            return [['OK', 'Select'], ['BACK', 'Don\u2019t save']];
         }
         if (mode === 'manage') {
             var focused = document.activeElement;
@@ -1356,12 +1392,64 @@
         }
     }
 
-    function added(account) {
+    function added(account, unsaved) {
         var again = adding.again && adding.again.UserId === account.UserId;
         stopAdding(adding.serverId);
         adding = null;
         removeNotices();
-        toast(again ? 'Now watching as ' + account.Name : account.Name + ' is saved on ' + deviceWord(), account);
+        toast(again || unsaved ? 'Now watching as ' + account.Name : account.Name + ' is saved on ' + deviceWord(), account);
+    }
+
+    // Asks before an administrator is saved on this device. Nothing marks an
+    // administrator anywhere else, so other users of the device can't tell
+    // which account manages the server.
+    function askSaveAdmin(account, serverId) {
+        var wasOpen = !!overlay;
+        if (!wasOpen) {
+            open();
+        }
+        if (!overlay) {
+            return;
+        }
+        var decide = function (keep) {
+            if (keep) {
+                save(serverId, account);
+            } else {
+                declineSave(serverId, account.UserId, account.AccessToken);
+            }
+            if (adding) {
+                added(account, !keep);
+            }
+            if (wasOpen) {
+                render();
+            } else {
+                close(true);
+            }
+        };
+        mode = 'ask';
+        var scrim = el('div', 'qs-scrim');
+        var dialog = el('div', 'qs-dialog qs-confirm');
+        dialog.setAttribute('role', 'alertdialog');
+        dialog.setAttribute('aria-modal', 'true');
+        dialog.setAttribute('aria-label', 'Save ' + account.Name + ' on ' + deviceWord() + '?');
+        dialog.appendChild(avatarCircle(account, serverAddress(), 'qs-avatar'));
+        dialog.appendChild(el('h2', null, 'Save ' + account.Name + ' on ' + deviceWord() + '?'));
+        dialog.appendChild(el('p', null, account.Name + ' manages this server, so anyone using ' + deviceWord()
+            + ' could switch to them and manage it too. If you don\u2019t save them, they stay signed in until someone switches or signs out.'));
+        var yes = el('button', 'qs-button qs-wide', 'Save');
+        yes.type = 'button';
+        yes.setAttribute('data-qs-action', 'admin-save');
+        yes.addEventListener('click', function () { decide(true); });
+        var no = el('button', 'qs-button qs-wide', 'Don\u2019t save');
+        no.type = 'button';
+        no.setAttribute('data-qs-action', 'admin-skip');
+        no.addEventListener('click', function () { decide(false); });
+        dialog.appendChild(yes);
+        dialog.appendChild(no);
+        scrim.appendChild(dialog);
+        overlay.appendChild(scrim);
+        yes.focus();
+        updateHints();
     }
 
     // Signs jellyfin-web in as user in place, then rebuilds home; never a
@@ -1842,6 +1930,11 @@
                 if (keep) {
                     keep.click();
                 }
+            } else if (mode === 'ask') {
+                var skip = overlay.querySelector('[data-qs-action="admin-skip"]');
+                if (skip) {
+                    skip.click();
+                }
             } else if (mode === 'manage') {
                 render('pick', 'manage');
             } else {
@@ -1859,7 +1952,7 @@
     }
 
     function open(focusOn) {
-        if (!document.body) {
+        if (typeof document === 'undefined' || !document.body) {
             return;
         }
         addStyles();
