@@ -77,7 +77,14 @@
         return -1;
     }
 
-    // Adds the account, or replaces its saved token and details in place.
+    // The server address as the store keeps it: case and trailing slashes
+    // don't make a different address.
+    function addressKey(address) {
+        return String(address || '').toLowerCase().replace(/\/+$/, '');
+    }
+
+    // Adds the account, or replaces its saved token and details in place,
+    // keeping every server address it has signed in through on this device.
     function save(serverId, account) {
         if (!serverId || !account || !account.UserId || !account.AccessToken) {
             return;
@@ -91,6 +98,12 @@
             PrimaryImageTag: account.PrimaryImageTag || null
         };
         var at = indexOf(accounts, account.UserId);
+        var addresses = at !== -1 && accounts[at].Addresses instanceof Array ? accounts[at].Addresses.slice() : [];
+        var address = addressKey(account.Address);
+        if (address && addresses.indexOf(address) === -1) {
+            addresses.push(address);
+        }
+        entry.Addresses = addresses;
         if (at === -1) {
             accounts.push(entry);
         } else {
@@ -98,6 +111,34 @@
         }
         value.servers[serverId] = accounts;
         writeStore(value);
+    }
+
+    // Accounts saved before addresses were kept take the address they are
+    // next seen at.
+    function adoptAddress(serverId, address) {
+        var key = addressKey(address);
+        if (!serverId || !key) {
+            return;
+        }
+        var value = readStore();
+        var accounts = value.servers[serverId] instanceof Array ? value.servers[serverId] : [];
+        var changed = false;
+        for (var i = 0; i < accounts.length; i++) {
+            if (!(accounts[i].Addresses instanceof Array) || !accounts[i].Addresses.length) {
+                accounts[i].Addresses = [key];
+                changed = true;
+            }
+        }
+        if (changed) {
+            writeStore(value);
+        }
+    }
+
+    // A saved token is only ever sent to an address its account signed in
+    // through on this device, so a server that reports another server's id
+    // never receives that server's tokens.
+    function knownAt(account, address) {
+        return !!account && account.Addresses instanceof Array && account.Addresses.indexOf(addressKey(address)) !== -1;
     }
 
     function markStale(serverId, userId) {
@@ -260,14 +301,16 @@
         if (!now) {
             return;
         }
-        var key = now.serverId + '|' + now.userId + '|' + now.token;
+        var here = serverAddress();
+        var key = now.serverId + '|' + now.userId + '|' + now.token + '|' + addressKey(here);
         if (key === lastSeen) {
             return;
         }
         lastSeen = key;
+        adoptAddress(now.serverId, here);
         var saved = list(now.serverId);
         var at = indexOf(saved, now.userId);
-        if (at !== -1 && saved[at].AccessToken === now.token && saved[at].Name) {
+        if (at !== -1 && saved[at].AccessToken === now.token && saved[at].Name && knownAt(saved[at], here)) {
             return;
         }
         if (at === -1 && declinedSave(now.serverId, now.userId, now.token)) {
@@ -275,7 +318,7 @@
         }
         request('GET', 'Users/Me', now.token, function (status, user) {
             if (status === 200 && user && user.Id === now.userId) {
-                var account = { UserId: user.Id, Name: user.Name, AccessToken: now.token, PrimaryImageTag: user.PrimaryImageTag };
+                var account = { UserId: user.Id, Name: user.Name, AccessToken: now.token, PrimaryImageTag: user.PrimaryImageTag, Address: here };
                 // An administrator is saved only when someone chooses to: anyone
                 // using the device could then manage the server.
                 if (at === -1 && user.Policy && user.Policy.IsAdministrator) {
@@ -521,7 +564,7 @@
         var button = el('button', 'qs-tile');
         button.type = 'button';
         button.setAttribute('data-qs-user', account.UserId);
-        var stale = !current && account.Stale;
+        var stale = !current && (account.Stale || !knownAt(account, server));
         var tag = current ? (managing ? 'Signed in now' : 'Watching now') : stale ? 'Sign in again' : '';
         if (stale) {
             button.className += ' qs-stale';
@@ -1180,6 +1223,11 @@
         if (!now || removing || account.UserId === now.userId) {
             return;
         }
+        if (!knownAt(account, serverAddress())) {
+            // Its token never goes to an address it didn\u2019t sign in through.
+            forgetAccount(account);
+            return;
+        }
         removing = true;
         request('POST', 'Sessions/Logout', account.AccessToken, function (status) {
             removing = false;
@@ -1515,6 +1563,14 @@
     // rejected sign-in marks the account instead. inSwitcher: Back opened
     // Who's watching?, which says who is watching, so there is no toast.
     function restore(serverId, previous, inSwitcher) {
+        if (!knownAt(previous, serverAddress())) {
+            if (inSwitcher) {
+                returned(true);
+            }
+            stopAdding(serverId);
+            toast('Sign in to keep watching as ' + previous.Name + ' here.', null, true);
+            return;
+        }
         request('GET', 'Users/Me', previous.AccessToken, function (status, user) {
             if (inSwitcher && (status !== 200 || !user || user.Id !== previous.UserId)) {
                 returned(true);
@@ -1761,7 +1817,7 @@
             toast('This version of jellyfin-web can\u2019t switch accounts in place.', null, true);
             return;
         }
-        if (account.Stale) {
+        if (account.Stale || !knownAt(account, serverAddress())) {
             startAdd(false, account);
             return;
         }
