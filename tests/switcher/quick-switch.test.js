@@ -216,10 +216,11 @@ function fakeRequests() {
 }
 
 // Loads the script signed in as `signedIn` and hands back its one-second watch.
-function watching(signedIn, options, storage = memoryStorage()) {
+function watching(signedIn, options, storage = memoryStorage(), clock = null) {
     const { FakeXhr, sent } = fakeRequests()
     let tick = null
     const window = load({
+        ...(clock ? { Date: clock } : {}),
         localStorage: storage,
         ApiClient: apiClient(signedIn, options),
         XMLHttpRequest: FakeXhr,
@@ -471,4 +472,64 @@ test('nobody is forgotten when the account that leaves is not saved with the tok
 
     assert.equal(sent.length, before)
     assert.equal(store.list('s').length, 1)
+})
+
+// A clock the test moves on: `new Date().getTime()` reads clock.now.
+function testClock() {
+    function FakeDate() { this.t = FakeDate.now }
+    FakeDate.now = 1000000
+    FakeDate.prototype.getTime = function () { return this.t }
+    return FakeDate
+}
+
+test('a sign-out is still seen when the page reloads before the next look', () => {
+    const first = signedInAsAl()
+    assert.ok(JSON.parse(first.storage.getItem('quickswitch')).signedIn)
+
+    // The reloaded page: nobody signed in, and nothing in memory from before.
+    const next = watching({ serverId: 's', userId: null, token: null }, undefined, first.storage)
+    next.tick()
+
+    const check = next.sent.filter((x) => /Token="ta"/.test(x.headers.Authorization))[0]
+    assert.ok(check, 'the reloaded page checks the signed-out account')
+    check.answer(401, '')
+    assert.deepEqual(next.store.list('s').map((a) => a.UserId), ['b'])
+})
+
+test('a sign-out check that got no answer is tried again while the page stays open', () => {
+    const clock = testClock()
+    const storage = memoryStorage()
+    const signedIn = { serverId: 's', userId: 'a', token: 'ta' }
+    const run = watching(signedIn, undefined, storage, clock)
+    run.store.save('s', { UserId: 'a', Name: 'Al', AccessToken: 'ta', Address: 'http://server/jf/' })
+    run.store.save('s', { UserId: 'b', Name: 'Bo', AccessToken: 'tb', Address: 'http://server/jf/' })
+    run.tick()
+
+    signedIn.token = null
+    clock.now += 1000
+    run.tick()
+    const first = run.sent.filter((x) => /Token="ta"/.test(x.headers.Authorization))
+    first[first.length - 1].onerror()
+
+    clock.now += 1000
+    run.tick()
+    assert.equal(run.sent.filter((x) => /Token="ta"/.test(x.headers.Authorization)).length, first.length)
+
+    clock.now += 5000
+    run.tick()
+    const again = run.sent.filter((x) => /Token="ta"/.test(x.headers.Authorization))
+    assert.equal(again.length, first.length + 1)
+    again[again.length - 1].answer(401, '')
+    assert.deepEqual(run.store.list('s').map((a) => a.UserId), ['b'])
+})
+
+test('a restart in the middle of an add is not a sign-out', () => {
+    const first = signedInAsAl()
+    first.store.startAdding('s', 'a')
+
+    const next = watching({ serverId: 's', userId: null, token: null }, undefined, first.storage)
+    next.tick()
+
+    assert.equal(next.sent.filter((x) => /Token="ta"/.test(x.headers.Authorization)).length, 0)
+    assert.deepEqual(next.store.list('s').map((a) => a.UserId), ['a', 'b'])
 })

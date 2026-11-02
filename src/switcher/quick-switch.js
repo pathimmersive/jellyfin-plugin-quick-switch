@@ -41,10 +41,10 @@
     // themselves are in the store below.
     // The last sign-in seen, as server, user, token and address, so the server is asked about each one once.
     var lastSeen = '';
-    // Who was signed in at the last look, to notice jellyfin-web's own Sign Out.
-    var wasSignedIn = null;
-    // Whether this load has run the sign-out check left by the last one.
-    var checkedSignOut = false;
+    // Who was signed in at the last look, as kept in the store, to notice jellyfin-web's own Sign Out.
+    var wasSignedIn = '';
+    // The sign-out check: whether one is waiting for the server, and when the last one started.
+    var signOutCheck = { busy: false, at: 0 };
     // The switcher's element while it is open.
     var overlay = null;
     // What the switcher shows: pick, manage, move, add, confirm or ask.
@@ -335,9 +335,29 @@
     // Whoever signs in on this device is saved, or their token replaced. The
     // server is asked only when the signed-in user or token changes.
 
+    // Who is signed in, kept in the store rather than only in memory: the
+    // LG app can reload the page as it signs out, and the first look after
+    // the reload still has to see who was signed in. A mark of the token is
+    // kept, never the token.
+    function rememberSignedIn(now) {
+        var key = now ? now.serverId + '|' + now.userId + '|' + tokenMark(now.token) : '';
+        if (key === wasSignedIn) {
+            return;
+        }
+        wasSignedIn = key;
+        var value = readStore();
+        if (now) {
+            value.signedIn = { serverId: now.serverId, userId: now.userId, mark: tokenMark(now.token) };
+        } else {
+            delete value.signedIn;
+        }
+        writeStore(value);
+    }
+
     // An account that signed out with jellyfin-web's Sign Out leaves the
-    // switcher too, once the server rejects its saved token. No answer leaves
-    // the check for the next load; a token that still works keeps the account.
+    // switcher too, once the server rejects its saved token. A token that
+    // still works keeps the account. With no answer the check is tried again
+    // every few seconds while the page is open, and at the next load.
     function markSignedOut(serverId, userId) {
         var value = readStore();
         value.signedOut = { serverId: serverId, userId: userId };
@@ -348,7 +368,7 @@
     function checkSignedOut() {
         var value = readStore();
         var pending = value.signedOut;
-        if (!pending || typeof pending !== 'object') {
+        if (!pending || typeof pending !== 'object' || signOutCheck.busy) {
             return;
         }
         var clear = function () {
@@ -362,7 +382,10 @@
             clear();
             return;
         }
+        signOutCheck.busy = true;
+        signOutCheck.at = new Date().getTime();
         request('GET', 'Users/Me', saved[at].AccessToken, function (status) {
+            signOutCheck.busy = false;
             if (status === 0) {
                 return;
             }
@@ -373,25 +396,30 @@
         });
     }
 
+    // Whether the sign-in was cleared on purpose: an add (also across a
+    // restart, as the store remembers it), a return after one, or a switch.
+    function clearedOnPurpose(serverId) {
+        return !!adding || !!returning || switching || !!addingFrom(serverId);
+    }
+
     function watch() {
         var now = signedIn();
-        if (!checkedSignOut && client()) {
-            checkedSignOut = true;
+        if (client() && new Date().getTime() - signOutCheck.at >= 5000) {
             checkSignedOut();
         }
         if (!now) {
-            var before = wasSignedIn;
-            wasSignedIn = null;
-            if (before && !adding && !switching && !returning) {
+            var before = readStore().signedIn;
+            rememberSignedIn(null);
+            if (before && typeof before === 'object' && !clearedOnPurpose(before.serverId)) {
                 var saved = list(before.serverId);
                 var at = indexOf(saved, before.userId);
-                if (at !== -1 && saved[at].AccessToken === before.token) {
+                if (at !== -1 && tokenMark(saved[at].AccessToken) === before.mark) {
                     markSignedOut(before.serverId, before.userId);
                 }
             }
             return;
         }
-        wasSignedIn = now;
+        rememberSignedIn(now);
         var here = serverAddress();
         var key = now.serverId + '|' + now.userId + '|' + now.token + '|' + addressKey(here);
         if (key === lastSeen) {
