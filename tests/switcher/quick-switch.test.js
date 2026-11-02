@@ -406,3 +406,69 @@ test('accounts saved before addresses were kept take the address they are next s
     assert.deepEqual(store.list('s').map((a) => a.Addresses), [['http://server/jf'], ['http://server/jf']])
     assert.deepEqual(store.list('s').map((a) => a.AccessToken), ['old-a', 'old-b'])
 })
+
+// Two accounts saved at this address, Al signed in with the token that is saved.
+function signedInAsAl(storage = memoryStorage()) {
+    const signedIn = { serverId: 's', userId: 'a', token: 'ta' }
+    const run = watching(signedIn, undefined, storage)
+    run.store.save('s', { UserId: 'a', Name: 'Al', AccessToken: 'ta', Address: 'http://server/jf/' })
+    run.store.save('s', { UserId: 'b', Name: 'Bo', AccessToken: 'tb', Address: 'http://server/jf/' })
+    run.tick()
+    return { signedIn, storage, ...run }
+}
+
+test('an account that signs out with jellyfin-web is forgotten once the server rejects its token', () => {
+    const { signedIn, tick, sent, store } = signedInAsAl()
+    const before = sent.length
+
+    signedIn.token = null
+    tick()
+
+    assert.equal(sent.length, before + 1)
+    assert.equal(sent[before].url, 'http://server/jf/Users/Me')
+    assert.match(sent[before].headers.Authorization, /Token="ta"/)
+    sent[before].answer(401, '')
+    assert.deepEqual(store.list('s').map((a) => a.UserId), ['b'])
+})
+
+test('an account whose token still works after the sign-in is cleared stays saved', () => {
+    const { signedIn, tick, sent, store } = signedInAsAl()
+    const before = sent.length
+
+    signedIn.token = null
+    tick()
+    sent[before].answer(200, { Id: 'a', Name: 'Al' })
+
+    assert.deepEqual(store.list('s').map((a) => a.UserId), ['a', 'b'])
+})
+
+test('a sign-out the server could not be asked about is checked again on the next load', () => {
+    const first = signedInAsAl()
+    const before = first.sent.length
+    first.signedIn.token = null
+    first.tick()
+    first.sent[before].onerror()
+    assert.deepEqual(first.store.list('s').map((a) => a.UserId), ['a', 'b'])
+
+    const next = watching({ serverId: 's', userId: 'b', token: 'tb' }, undefined, first.storage)
+    next.tick()
+
+    const check = next.sent.filter((x) => /Token="ta"/.test(x.headers.Authorization))[0]
+    assert.ok(check)
+    check.answer(401, '')
+    assert.deepEqual(next.store.list('s').map((a) => a.UserId), ['b'])
+})
+
+test('nobody is forgotten when the account that leaves is not saved with the token it signed in with', () => {
+    const signedIn = { serverId: 's', userId: 'a', token: 'new' }
+    const { tick, sent, store } = watching(signedIn)
+    store.save('s', { UserId: 'a', Name: 'Al', AccessToken: 'old', Address: 'http://server/jf/' })
+    tick()
+    const before = sent.length
+
+    signedIn.token = null
+    tick()
+
+    assert.equal(sent.length, before)
+    assert.equal(store.list('s').length, 1)
+})
