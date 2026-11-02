@@ -6,11 +6,13 @@ const { readFileSync } = require('node:fs')
 const { join } = require('node:path')
 const vm = require('node:vm')
 
-const source = readFileSync(join(__dirname, '..', '..', 'src', 'switcher', 'quick-switch.js'), 'utf8')
+const filename = join(__dirname, '..', '..', 'src', 'switcher', 'quick-switch.js')
+const source = readFileSync(filename, 'utf8')
 
+// Named, so coverage is reported against the script rather than this file.
 function load(window = {}) {
     window.window = window
-    vm.runInNewContext(source, window)
+    vm.runInNewContext(source, window, { filename })
     return window
 }
 
@@ -24,7 +26,7 @@ test('loading twice keeps the first instance', () => {
     const window = load()
     const first = window.QuickSwitch
 
-    vm.runInNewContext(source, window)
+    vm.runInNewContext(source, window, { filename })
 
     assert.equal(window.QuickSwitch, first)
 })
@@ -176,4 +178,136 @@ test('an account with a profile picture gets its image URL under the server addr
     const picture = avatar({ UserId: 'u 1', Name: 'Al', PrimaryImageTag: 'abc' }, 'http://server/jf/', 360)
 
     assert.equal(picture.imageUrl, 'http://server/jf/Users/u%201/Images/Primary?tag=abc&quality=90&maxHeight=360')
+})
+
+// jellyfin-web's ApiClient, signed in as whoever `signedIn` holds.
+function apiClient(signedIn, { getUrl = true } = {}) {
+    const c = {
+        getCurrentUserId: () => signedIn.userId,
+        accessToken: () => signedIn.token,
+        serverId: () => signedIn.serverId,
+        serverAddress: () => 'http://server/jf/',
+        appName: () => 'Jellyfin Web',
+        deviceName: () => 'TV',
+        deviceId: () => 'device-1',
+        appVersion: () => '10.11.0',
+    }
+    if (getUrl) {
+        c.getUrl = (path) => 'http://server/jf/' + path
+    }
+    return c
+}
+
+// An XMLHttpRequest that holds each request until the test answers it.
+function fakeRequests() {
+    const sent = []
+    function FakeXhr() {
+        this.headers = {}
+    }
+    FakeXhr.prototype.open = function (method, url) { this.method = method; this.url = url }
+    FakeXhr.prototype.setRequestHeader = function (name, value) { this.headers[name] = value }
+    FakeXhr.prototype.send = function () { sent.push(this) }
+    FakeXhr.prototype.answer = function (status, body) {
+        this.status = status
+        this.responseText = typeof body === 'string' ? body : JSON.stringify(body)
+        this.onload()
+    }
+    return { FakeXhr, sent }
+}
+
+// Loads the script signed in as `signedIn` and hands back its one-second watch.
+function watching(signedIn, options) {
+    const { FakeXhr, sent } = fakeRequests()
+    let tick = null
+    const window = load({
+        localStorage: memoryStorage(),
+        ApiClient: apiClient(signedIn, options),
+        XMLHttpRequest: FakeXhr,
+        setInterval: (fn) => { tick = fn },
+    })
+    return { tick: () => tick(), sent, store: wrap(window.QuickSwitch).store }
+}
+
+test('saves whoever signs in once the server confirms who they are', () => {
+    const signedIn = { serverId: 's', userId: 'a', token: 't1' }
+    const { tick, sent, store } = watching(signedIn)
+
+    tick()
+
+    assert.equal(sent.length, 1)
+    assert.equal(sent[0].method, 'GET')
+    assert.equal(sent[0].url, 'http://server/jf/Users/Me')
+    assert.equal(sent[0].headers.Authorization,
+        'MediaBrowser Client="Jellyfin Web", Device="TV", DeviceId="device-1", Version="10.11.0", Token="t1"')
+    sent[0].answer(200, { Id: 'a', Name: 'Al', PrimaryImageTag: 'img' })
+    assert.deepEqual(store.list('s'), [{ UserId: 'a', Name: 'Al', AccessToken: 't1', PrimaryImageTag: 'img' }])
+})
+
+test('asks the server only when the signed-in account or its token changes', () => {
+    const signedIn = { serverId: 's', userId: 'a', token: 't1' }
+    const { tick, sent, store } = watching(signedIn)
+    tick()
+    sent[0].answer(200, { Id: 'a', Name: 'Al' })
+
+    tick()
+    tick()
+    assert.equal(sent.length, 1)
+
+    signedIn.token = 't2'
+    tick()
+    assert.equal(sent.length, 2)
+    sent[1].answer(200, { Id: 'a', Name: 'Al' })
+    assert.equal(store.list('s')[0].AccessToken, 't2')
+})
+
+test('an account already saved with its name and the same token is not asked about', () => {
+    const { tick, sent, store } = watching({ serverId: 's', userId: 'a', token: 't1' })
+    store.save('s', { UserId: 'a', Name: 'Al', AccessToken: 't1' })
+
+    tick()
+
+    assert.equal(sent.length, 0)
+})
+
+for (const [why, answer] of [
+    ['the server refuses the token', (xhr) => xhr.answer(401, '')],
+    ['the request fails', (xhr) => xhr.onerror()],
+    ['the request times out', (xhr) => xhr.ontimeout()],
+    ['the server answers for another account', (xhr) => xhr.answer(200, { Id: 'b', Name: 'Bo' })],
+    ['the answer cannot be read', (xhr) => xhr.answer(200, '{not json')],
+]) {
+    test(`saves nothing when ${why}, and asks again on the next tick`, () => {
+        const { tick, sent, store } = watching({ serverId: 's', userId: 'a', token: 't1' })
+        tick()
+
+        answer(sent[0])
+        assert.deepEqual(store.list('s'), [])
+
+        tick()
+        assert.equal(sent.length, 2)
+    })
+}
+
+test('asks nothing while nobody is signed in', () => {
+    const signedIn = { serverId: 's', userId: 'a', token: null }
+    const { tick, sent } = watching(signedIn)
+
+    tick()
+
+    assert.equal(sent.length, 0)
+})
+
+test('waits for jellyfin-web’s ApiClient before watching', () => {
+    let tick = null
+    load({ localStorage: memoryStorage(), setInterval: (fn) => { tick = fn } })
+
+    assert.doesNotThrow(() => tick())
+})
+
+test('builds the request address from the server address when the ApiClient cannot', () => {
+    const { tick, sent } = watching({ serverId: 's', userId: 'a', token: 't1' }, { getUrl: false })
+
+    tick()
+
+    assert.equal(sent[0].url, 'http://server/jf/Users/Me')
 })

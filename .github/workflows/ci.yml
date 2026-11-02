@@ -24,8 +24,9 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
-      - run: dotnet test
-      - run: node --test "tests/switcher/*.test.js"
+      # Runs the plugin and switcher tests and prints their coverage.
+      - name: Test, with coverage
+        run: bash scripts/coverage.sh
       - run: bash scripts/check-community-files.sh
 
   smoke-test:

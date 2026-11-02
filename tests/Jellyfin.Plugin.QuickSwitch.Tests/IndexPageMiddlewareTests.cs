@@ -170,6 +170,20 @@ public class IndexPageMiddlewareTests
     }
 
     [Fact]
+    public async Task APageSentCompressedAnywayIsPassedOnUnchanged()
+    {
+        var (context, body) = await Serve("/web/index.html", next: async c =>
+        {
+            c.Response.Headers.ContentEncoding = "br";
+            await c.Response.WriteAsync("compressed bytes");
+        });
+
+        Assert.Equal("br", context.Response.Headers.ContentEncoding.ToString());
+        Assert.Equal("compressed bytes", body);
+        Assert.False(context.Response.Headers.ContainsKey(HeaderNames.ETag));
+    }
+
+    [Fact]
     public async Task AChangeThatFailsServesTheStockPage()
     {
         var (context, body) = await Serve("/web/index.html", change: _ => throw new InvalidOperationException("broken"));
