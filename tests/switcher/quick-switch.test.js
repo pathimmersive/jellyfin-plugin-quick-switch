@@ -181,19 +181,19 @@ test('an account with a profile picture gets its image URL under the server addr
 })
 
 // jellyfin-web's ApiClient, signed in as whoever `signedIn` holds.
-function apiClient(signedIn, { getUrl = true } = {}) {
+function apiClient(signedIn, { getUrl = true, address = () => 'http://server/jf/' } = {}) {
     const c = {
         getCurrentUserId: () => signedIn.userId,
         accessToken: () => signedIn.token,
         serverId: () => signedIn.serverId,
-        serverAddress: () => 'http://server/jf/',
+        serverAddress: address,
         appName: () => 'Jellyfin Web',
         deviceName: () => 'TV',
         deviceId: () => 'device-1',
         appVersion: () => '10.11.0',
     }
     if (getUrl) {
-        c.getUrl = (path) => 'http://server/jf/' + path
+        c.getUrl = (path) => address() + path
     }
     return c
 }
@@ -240,7 +240,7 @@ test('saves whoever signs in once the server confirms who they are', () => {
     assert.equal(sent[0].headers.Authorization,
         'MediaBrowser Client="Jellyfin Web", Device="TV", DeviceId="device-1", Version="10.11.0", Token="t1"')
     sent[0].answer(200, { Id: 'a', Name: 'Al', PrimaryImageTag: 'img' })
-    assert.deepEqual(store.list('s'), [{ UserId: 'a', Name: 'Al', AccessToken: 't1', PrimaryImageTag: 'img' }])
+    assert.deepEqual(store.list('s'), [{ UserId: 'a', Name: 'Al', AccessToken: 't1', PrimaryImageTag: 'img', Addresses: ['http://server/jf'] }])
 })
 
 test('asks the server only when the signed-in account or its token changes', () => {
@@ -358,4 +358,51 @@ test('an administrator whose sign-in was not saved is not asked about again unti
     signedIn.token = 't2'
     first.tick()
     assert.equal(first.sent.length, 1)
+})
+
+test('remembers every server address an account signs in through, whatever the case or trailing slash', () => {
+    let at = 'http://192.168.1.5:8096/'
+    const signedIn = { serverId: 's', userId: 'b', token: 't1' }
+    const { tick, sent, store } = watching(signedIn, { address: () => at })
+    tick()
+    sent[0].answer(200, { Id: 'b', Name: 'Bo' })
+
+    at = 'HTTPS://Watch.Example.org//'
+    signedIn.token = 't2'
+    tick()
+    sent[1].answer(200, { Id: 'b', Name: 'Bo' })
+    at = 'https://watch.example.org'
+    signedIn.token = 't3'
+    tick()
+    sent[2].answer(200, { Id: 'b', Name: 'Bo' })
+
+    assert.deepEqual(store.list('s')[0].Addresses, ['http://192.168.1.5:8096', 'https://watch.example.org'])
+})
+
+test('a saved account signing in at a new address with the same token records that address too', () => {
+    let at = 'http://one/'
+    const signedIn = { serverId: 's', userId: 'b', token: 't1' }
+    const { tick, sent, store } = watching(signedIn, { address: () => at })
+    tick()
+    sent[0].answer(200, { Id: 'b', Name: 'Bo' })
+
+    at = 'http://two/'
+    tick()
+    sent[1].answer(200, { Id: 'b', Name: 'Bo' })
+
+    assert.deepEqual(store.list('s')[0].Addresses, ['http://one', 'http://two'])
+})
+
+test('accounts saved before addresses were kept take the address they are next seen at', () => {
+    const storage = memoryStorage()
+    storage.setItem('quickswitch', JSON.stringify({ servers: { s: [
+        { UserId: 'a', Name: 'Al', AccessToken: 'old-a' },
+        { UserId: 'b', Name: 'Bo', AccessToken: 'old-b' },
+    ] } }))
+    const { tick, store } = watching({ serverId: 's', userId: 'a', token: 'old-a' }, undefined, storage)
+
+    tick()
+
+    assert.deepEqual(store.list('s').map((a) => a.Addresses), [['http://server/jf'], ['http://server/jf']])
+    assert.deepEqual(store.list('s').map((a) => a.AccessToken), ['old-a', 'old-b'])
 })
