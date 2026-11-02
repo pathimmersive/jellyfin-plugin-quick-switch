@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" width="1280" height="640">
+  <title>Quick Switch</title>
+  <defs>
+    <clipPath id="account"><circle cx="320" cy="180" r="86"/></clipPath>
+  </defs>
+  <rect width="1280" height="640" fill="#161616"/>
+  <!-- The mark from icon.svg, scaled up and placed on the left. -->
+  <g transform="translate(330 320) scale(1.4) translate(-320 -180)">
+    <path d="M354.5 292.8 A118 118 0 1 1 432.8 214.5" fill="none" stroke="#00a4dc" stroke-width="16" stroke-linecap="round"/>
+    <circle cx="320" cy="180" r="86" fill="#303030"/>
+    <g clip-path="url(#account)" fill="#fff">
+      <circle cx="320" cy="162" r="26"/>
+      <path d="M266.7 266 Q266.7 198 320 198 Q373.3 198 373.3 266 Z"/>
+    </g>
+    <g transform="translate(414 274) rotate(45)" fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <g stroke="#161616" stroke-width="26">
+        <path d="M -34 -14 H34 M20 -28 L34 -14 L20 0"/>
+        <path d="M34 14 H-34 M -20 0 L-34 14 L-20 28"/>
+      </g>
+      <g stroke="#00a4dc" stroke-width="12">
+        <path d="M -34 -14 H34 M20 -28 L34 -14 L20 0"/>
+        <path d="M34 14 H-34 M -20 0 L-34 14 L-20 28"/>
+      </g>
+    </g>
+  </g>
+  <g font-family="'Segoe UI', 'Noto Sans', 'Helvetica Neue', Arial, sans-serif">
+    <text x="600" y="296" font-size="92" font-weight="700" fill="#ffffff">Quick Switch</text>
+    <text x="604" y="366" font-size="34" fill="#ffffff" fill-opacity=".72">Switch Jellyfin accounts on a shared TV</text>
+    <text x="604" y="412" font-size="34" fill="#ffffff" fill-opacity=".72">without typing a password.</text>
+    <text x="604" y="478" font-size="24" font-weight="600" fill="#00a4dc">Unofficial Jellyfin server plugin</text>
+  </g>
+</svg>

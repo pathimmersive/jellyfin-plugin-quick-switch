@@ -147,7 +147,7 @@ async Task Manifest(Dictionary<string, string> options)
     }
 
     var package = new JsonObject();
-    foreach (var field in new[] { "guid", "name", "description", "overview", "owner", "category" })
+    foreach (var field in new[] { "guid", "name", "description", "overview", "owner", "category", "imageUrl" })
     {
         package[field] = meta[field]?.DeepClone();
     }

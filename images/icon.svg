@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" width="640" height="360">
+  <title>Quick Switch</title>
+  <defs>
+    <clipPath id="account"><circle cx="320" cy="180" r="86"/></clipPath>
+  </defs>
+  <rect width="640" height="360" fill="#161616"/>
+  <!-- The ring the switcher spins while it switches, opened at the lower right. -->
+  <path d="M354.5 292.8 A118 118 0 1 1 432.8 214.5" fill="none" stroke="#00a4dc" stroke-width="16" stroke-linecap="round"/>
+  <circle cx="320" cy="180" r="86" fill="#303030"/>
+  <g clip-path="url(#account)" fill="#fff">
+    <circle cx="320" cy="162" r="26"/>
+    <path d="M266.7 266 Q266.7 198 320 198 Q373.3 198 373.3 266 Z"/>
+  </g>
+  <!-- Two opposite arrows across the gap: the tail of the Q. -->
+  <g transform="translate(414 274) rotate(45)" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <g stroke="#161616" stroke-width="26">
+      <path d="M -34 -14 H34 M20 -28 L34 -14 L20 0"/>
+      <path d="M34 14 H-34 M -20 0 L-34 14 L-20 28"/>
+    </g>
+    <g stroke="#00a4dc" stroke-width="12">
+      <path d="M -34 -14 H34 M20 -28 L34 -14 L20 0"/>
+      <path d="M34 14 H-34 M -20 0 L-34 14 L-20 28"/>
+    </g>
+  </g>
+</svg>

@@ -53,6 +53,9 @@ dotnet publish "$project" -c Release -o "$plugin_dir" --nologo -v quiet >/dev/nu
 [ -f "$plugin_dir/Jellyfin.Plugin.QuickSwitch.dll" ] || fail "plugin assembly missing from publish output"
 grep -q '"targetAbi": *"12.0.0.0"' "$plugin_dir/meta.json" || fail "meta.json does not declare targetAbi 12.0.0.0"
 pass "plugin built; meta.json declares targetAbi 12.0.0.0"
+grep -q '"imagePath": *"icon.png"' "$plugin_dir/meta.json" && [ -s "$plugin_dir/icon.png" ] \
+    || fail "the plugin folder does not carry icon.png named by meta.json's imagePath"
+pass "the plugin folder carries icon.png, named by meta.json's imagePath"
 
 ft_cache="${XDG_CACHE_HOME:-$HOME/.cache}/quick-switch/FileTransformation-$FT_VERSION.zip"
 if [ ! -f "$ft_cache" ] || [ "$(md5sum "$ft_cache" | cut -d' ' -f1)" != "$FT_MD5" ]; then
@@ -122,6 +125,21 @@ check_plugin_active() {
     pass "/Plugins lists $name as Active"
 }
 
+# Dashboard → Plugins shows the image the server answers for the plugin.
+check_plugin_image() {
+    local prefix="$1"
+    code="$(get_status -H "Authorization: $token_header" "$prefix/Plugins")"
+    [ "$code" = "200" ] || fail "GET /Plugins returned $code"
+    entry="$(sed 's/},{/}\n{/g' "$work/body" | grep "\"Name\":\"$PLUGIN_NAME\"" || true)"
+    echo "$entry" | grep -q '"HasImage":true' || fail "/Plugins says $PLUGIN_NAME has no image"
+    id="$(echo "$entry" | json_str Id)"
+    code="$(curl -s -o "$work/image" -D "$work/image-headers" -w '%{http_code}' -H "Authorization: $token_header" "$prefix/Plugins/$id/$PLUGIN_VERSION/Image")"
+    [ "$code" = "200" ] || fail "GET /Plugins/$id/$PLUGIN_VERSION/Image returned $code"
+    grep -qi '^content-type: image/png' "$work/image-headers" || fail "the plugin image is not served as image/png"
+    [ "$(md5sum < "$work/image")" = "$(md5sum < "$repo/images/icon.png")" ] || fail "the plugin image served is not images/icon.png"
+    pass "the server serves images/icon.png as $PLUGIN_NAME's image"
+}
+
 check_no_create_error() {
     # Read the whole log first: grep -q stops early, and under pipefail the cut-off
     # docker logs would fail the check.
@@ -189,6 +207,7 @@ check_web_http() {
 
 # On its own: the plugin loads, serves its script, and adds it to jellyfin-web.
 check_plugin_active "$base" "$PLUGIN_NAME"
+check_plugin_image "$base"
 check_no_create_error
 grep -q 'Account switcher added to jellyfin-web' "$work/server.log" \
     || fail "the plugin did not log that it adds the switcher to jellyfin-web"
