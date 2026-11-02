@@ -1,10 +1,14 @@
 # Contributing to Quick Switch
 
-Thanks for your interest. Quick Switch is in early development, so please open an issue to discuss a change before starting on a pull request.
+Thanks for your interest. Quick Switch is in early development, so please open an issue or start a discussion about a change before starting on a pull request.
 
-## Reporting a problem
+## Asking, suggesting and reporting
 
-Open an issue with the bug report template. Include the Jellyfin server version, the Quick Switch version or commit, the client app and device, and the steps that show the problem. Security problems go through private reporting instead; see [SECURITY.md](SECURITY.md).
+- **Questions** about installing, setting up or using Quick Switch go in [Discussions → Q&A](https://github.com/pathimmersive/jellyfin-plugin-quick-switch/discussions/categories/q-a).
+- **Ideas** can be talked through in [Discussions → Ideas](https://github.com/pathimmersive/jellyfin-plugin-quick-switch/discussions/categories/ideas) before a feature request.
+- **Bugs and feature requests** are issues, opened with their forms.
+
+For a bug, use the bug report form. Include the Jellyfin server version, the Quick Switch version or commit, the client app and device, and the steps that show the problem. Security problems go through private reporting instead; see [SECURITY.md](SECURITY.md).
 
 ## Making a change
 
@@ -12,7 +16,8 @@ Open an issue with the bug report template. Include the Jellyfin server version,
 2. Build and test as the [README](README.md#building-and-testing) describes. A change should pass `dotnet test`, the switcher tests, `bash scripts/check-community-files.sh` and, for server changes, `bash scripts/smoke-test.sh`. A change to packaging should also pass `bash scripts/repo-install-check.sh` and `bash scripts/repo-install-check.sh --upgrade`, which install the plugin on Jellyfin from a plugin repository and upgrade it to a newer version. Note anything checked by hand, with the client, device and Jellyfin version. `bash scripts/coverage.sh` runs both test suites and prints their coverage, as CI does; a new behaviour should come with a test, but no coverage percentage fails a build.
 3. Write the pull request title as a [Conventional Commits](https://www.conventionalcommits.org/) subject: `feat:`, `fix:`, `docs:`, `test:`, `ci:` or `chore:`, then what changed, in 72 characters or fewer.
 4. Fill in the pull request template: what changed and why, and how it was checked. Link a related issue with `Fixes #N`.
-5. CI must pass before the change can merge. Pull requests are squash-merged into one commit on `main`, built from the pull request's commits, so give them Conventional Commits messages too.
+5. For a change users would notice, add a line under **Unreleased** in [CHANGELOG.md](CHANGELOG.md), in the section that fits (Added, Changed, Fixed, Removed, Security).
+6. CI must pass before the change can merge. Pull requests are squash-merged into one commit on `main`, built from the pull request's commits, so give them Conventional Commits messages too.
 
 The switcher script in `src/switcher` is plain ES5 with no build step, because TV apps run older browser engines. Keep it that way.
 
@@ -20,9 +25,9 @@ The switcher script in `src/switcher` is plain ES5 with no build step, because T
 
 Releases are cut by a maintainer, and only when there is something worth shipping. Nothing is released from `main` automatically.
 
-1. Set `<Version>` in `src/Jellyfin.Plugin.QuickSwitch/Jellyfin.Plugin.QuickSwitch.csproj` and `PLUGIN_VERSION` in `scripts/smoke-test.sh` to the new version, and merge that change.
-2. Tag the merge commit with an annotated tag whose message is the changelog line, for example `git tag -a v0.2.0.0 -m "Summary of the changes"`, and push the tag.
-3. The Release workflow packages the plugin, checks nothing is published under that tag yet, and publishes the zip with its manifest entry. The Pages workflow then rebuilds `manifest.json` from every release.
+1. Set `<Version>` in `src/Jellyfin.Plugin.QuickSwitch/Jellyfin.Plugin.QuickSwitch.csproj` and `PLUGIN_VERSION` in `scripts/smoke-test.sh` to the new version, rename **Unreleased** in `CHANGELOG.md` to the version and date (for example `## [0.2.0.0] - 2026-12-01`) with a new empty **Unreleased** above it, and merge that change.
+2. Tag the merge commit with the same version, for example `git tag -a v0.2.0.0 -m "Quick Switch 0.2.0.0"`, and push the tag.
+3. The Release workflow takes that version's `CHANGELOG.md` section as the release notes and the manifest's changelog, and stops if there is none. It packages the plugin, checks nothing is published under that tag yet, and publishes the zip with its manifest entry. The Pages workflow then rebuilds `manifest.json` from every release.
 
 GitHub Pages must be set to deploy from GitHub Actions before the first release. A published release is never replaced; a fix ships as a new version.
 
