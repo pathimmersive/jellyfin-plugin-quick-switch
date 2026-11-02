@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Linq;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
@@ -7,7 +8,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Jellyfin.Plugin.QuickSwitch.Controllers;
 
 /// <summary>
-/// Serves the switcher script that jellyfin-web loads.
+/// Serves the switcher script that jellyfin-web loads, and its stylesheet.
 /// </summary>
 [ApiController]
 [Route("QuickSwitch")]
@@ -18,7 +19,7 @@ public class SwitcherScriptController : ControllerBase
     /// <summary>
     /// Initializes a new instance of the <see cref="SwitcherScriptController"/> class.
     /// </summary>
-    /// <param name="script">The embedded switcher script.</param>
+    /// <param name="script">The embedded switcher script and stylesheet.</param>
     public SwitcherScriptController(SwitcherScript script)
     {
         _script = script;
@@ -34,16 +35,29 @@ public class SwitcherScriptController : ControllerBase
     [AllowAnonymous]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status304NotModified)]
-    public ActionResult GetScript()
+    public ActionResult GetScript() => Serve(_script.ETag, _script.Open, SwitcherScript.ContentType);
+
+    /// <summary>
+    /// Serves the switcher's stylesheet, which the script links from beside itself. Anonymous and
+    /// revalidated on every load, like the script.
+    /// </summary>
+    /// <returns>The stylesheet, or 304 when the client already has it.</returns>
+    [HttpGet(SwitcherScript.StyleFileName)]
+    [AllowAnonymous]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status304NotModified)]
+    public ActionResult GetStyle() => Serve(_script.StyleETag, _script.OpenStyle, SwitcherScript.StyleContentType);
+
+    private ActionResult Serve(string etag, Func<Stream> open, string contentType)
     {
         Response.Headers.CacheControl = "no-cache";
-        Response.Headers.ETag = _script.ETag;
-        if (ClientHas(_script.ETag))
+        Response.Headers.ETag = etag;
+        if (ClientHas(etag))
         {
             return StatusCode(StatusCodes.Status304NotModified);
         }
 
-        return File(_script.Open(), SwitcherScript.ContentType);
+        return File(open(), contentType);
     }
 
     // If-None-Match may list several entity tags, in one header or several.

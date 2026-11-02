@@ -68,6 +68,40 @@ public class SwitcherScriptTests
         Assert.IsType<FileStreamResult>(controller.GetScript()).FileStream.Dispose();
     }
 
+    [Fact]
+    public void TheStylesheetIsEmbedded()
+    {
+        using var reader = new StreamReader(new SwitcherScript().OpenStyle());
+
+        Assert.Contains("#quickswitch", reader.ReadToEnd());
+    }
+
+    [Fact]
+    public void TheControllerServesTheStylesheetAsCssWithItsOwnETag()
+    {
+        var (controller, context) = Controller();
+
+        var result = Assert.IsType<FileStreamResult>(controller.GetStyle());
+        result.FileStream.Dispose();
+
+        Assert.StartsWith("text/css", result.ContentType);
+        Assert.Equal("no-cache", context.Response.Headers.CacheControl.ToString());
+        Assert.Equal(new SwitcherScript().StyleETag, context.Response.Headers.ETag.ToString());
+        Assert.Matches("^\"[0-9a-f]{16}\"$", new SwitcherScript().StyleETag);
+        Assert.NotEqual(new SwitcherScript().ETag, new SwitcherScript().StyleETag);
+    }
+
+    [Fact]
+    public void AMatchingIfNoneMatchGetsTheStylesheetNotModified()
+    {
+        var (controller, context) = Controller();
+        context.Request.Headers.IfNoneMatch = new SwitcherScript().StyleETag;
+
+        var result = Assert.IsType<StatusCodeResult>(controller.GetStyle());
+
+        Assert.Equal(StatusCodes.Status304NotModified, result.StatusCode);
+    }
+
     private static (SwitcherScriptController Controller, DefaultHttpContext Context) Controller()
     {
         var context = new DefaultHttpContext();

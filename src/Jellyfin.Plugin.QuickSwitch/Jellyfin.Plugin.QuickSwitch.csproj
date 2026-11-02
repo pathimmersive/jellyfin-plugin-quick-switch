@@ -28,6 +28,8 @@
 
   <ItemGroup>
     <EmbeddedResource Include="$(SwitcherScriptPath)" LogicalName="quick-switch.js" />
+    <!-- Its stylesheet, served beside it at /QuickSwitch/quick-switch.css. -->
+    <EmbeddedResource Include="$(MSBuildThisFileDirectory)..\switcher\quick-switch.css" LogicalName="quick-switch.css" />
   </ItemGroup>
 
   <!-- The plugin image: Dashboard → Plugins shows it from the plugin folder (meta.json's imagePath), and the

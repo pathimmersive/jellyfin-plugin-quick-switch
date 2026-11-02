@@ -16,6 +16,7 @@ ADMIN_USER="smoke"
 ADMIN_PW="smoke-$RANDOM$RANDOM"
 CLIENT_HEADER='MediaBrowser Client="quickswitch-smoke", Device="smoke", DeviceId="quickswitch-smoke", Version="1.0.0"'
 SCRIPT_PATH="QuickSwitch/quick-switch.js"
+STYLE_PATH="QuickSwitch/quick-switch.css"
 
 # File Transformation is not needed; admins may have it for other plugins, so one
 # case runs with it installed alongside. The pinned release is built for the
@@ -150,21 +151,28 @@ check_no_create_error() {
     pass "the server log has no error creating the plugin"
 }
 
-check_script_served() {
-    local prefix="$1"
-    code="$(curl -s -D "$work/headers" -o "$work/script" -w '%{http_code}' "$prefix/$SCRIPT_PATH")"
-    [ "$code" = "200" ] || fail "anonymous GET $prefix/$SCRIPT_PATH returned $code"
-    grep -i -q '^content-type: *text/javascript' "$work/headers" || fail "GET $prefix/$SCRIPT_PATH is not text/javascript"
-    cmp -s "$work/script" "$repo/src/switcher/quick-switch.js" || fail "GET $prefix/$SCRIPT_PATH is not src/switcher/quick-switch.js"
-    grep -i -q '^cache-control: *no-cache' "$work/headers" || fail "GET $prefix/$SCRIPT_PATH has no Cache-Control: no-cache"
+# A file the plugin serves beside the script: anonymous, its type, the file itself,
+# no-cache, and an ETag that gets 304.
+check_served() {
+    local prefix="$1" path="$2" file="$3" type="$4"
+    code="$(curl -s -D "$work/headers" -o "$work/script" -w '%{http_code}' "$prefix/$path")"
+    [ "$code" = "200" ] || fail "anonymous GET $prefix/$path returned $code"
+    grep -i -q "^content-type: *$type" "$work/headers" || fail "GET $prefix/$path is not $type"
+    cmp -s "$work/script" "$repo/$file" || fail "GET $prefix/$path is not $file"
+    grep -i -q '^cache-control: *no-cache' "$work/headers" || fail "GET $prefix/$path has no Cache-Control: no-cache"
     etag="$(grep -i '^etag:' "$work/headers" | sed 's/^[^:]*: *//' | tr -d '\r')"
-    [ -n "$etag" ] || fail "GET $prefix/$SCRIPT_PATH has no ETag"
+    [ -n "$etag" ] || fail "GET $prefix/$path has no ETag"
     # curl creates the output file only when a body arrives, so start from none.
     rm -f "$work/not-modified"
-    code="$(curl -s -o "$work/not-modified" -w '%{http_code}' -H "If-None-Match: $etag" "$prefix/$SCRIPT_PATH")"
-    [ "$code" = "304" ] || fail "GET $prefix/$SCRIPT_PATH with its ETag returned $code, expected 304"
-    [ ! -s "$work/not-modified" ] || fail "the 304 for $prefix/$SCRIPT_PATH has a body"
-    pass "anonymous GET $prefix/$SCRIPT_PATH serves src/switcher/quick-switch.js as text/javascript, no-cache, with an ETag that gets 304"
+    code="$(curl -s -o "$work/not-modified" -w '%{http_code}' -H "If-None-Match: $etag" "$prefix/$path")"
+    [ "$code" = "304" ] || fail "GET $prefix/$path with its ETag returned $code, expected 304"
+    [ ! -s "$work/not-modified" ] || fail "the 304 for $prefix/$path has a body"
+    pass "anonymous GET $prefix/$path serves $file as $type, no-cache, with an ETag that gets 304"
+}
+
+check_script_served() {
+    check_served "$1" "$SCRIPT_PATH" src/switcher/quick-switch.js text/javascript
+    check_served "$1" "$STYLE_PATH" src/switcher/quick-switch.css text/css
 }
 
 TAG_PATTERN='<script src="../QuickSwitch/quick-switch.js[^"]*"></script>'
@@ -223,6 +231,7 @@ base="$(base_url "")"
 check_plugin_active "$base" "File Transformation"
 check_plugin_active "$base" "$PLUGIN_NAME"
 check_no_create_error
+check_script_served "$base"
 check_web_changed "$base" "with File Transformation alongside"
 
 # Under a BaseUrl.
