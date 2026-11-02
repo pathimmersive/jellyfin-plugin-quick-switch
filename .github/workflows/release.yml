@@ -30,18 +30,19 @@ jobs:
         env:
           TAG: ${{ github.ref_name }}
         run: |
-          # The checkout holds the tag without its message; fetch it for the changelog.
-          git fetch --force --no-tags origin "refs/tags/$TAG:refs/tags/$TAG"
-          changelog="$(git tag -l --format='%(contents:subject)' "$TAG")"
+          # The version's CHANGELOG.md section is the release notes and the manifest's changelog;
+          # a version without one is not released.
+          mkdir -p release
+          bash scripts/changelog.sh "$TAG" > release/notes.md
           bash scripts/package.sh "$TAG" release \
-            "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/download/$TAG" "$changelog"
+            "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/download/$TAG" "$(cat release/notes.md)"
       - name: Create the release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: |
           gh release create "$TAG" release/quick-switch_*.zip release/quick-switch_*.json \
-            --verify-tag --title "Quick Switch $TAG" --notes-from-tag
+            --verify-tag --title "Quick Switch $TAG" --notes-file release/notes.md
 
   pages:
     needs: release
