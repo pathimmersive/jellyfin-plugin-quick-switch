@@ -30,6 +30,12 @@
     <EmbeddedResource Include="$(SwitcherScriptPath)" LogicalName="quick-switch.js" />
   </ItemGroup>
 
+  <!-- The plugin image: Dashboard → Plugins shows it from the plugin folder (meta.json's imagePath), and the
+       plugin repository's manifest points the catalog at the same file in the repository (imageUrl). -->
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)..\..\images\icon.png" Link="icon.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <!-- meta.json is the plugin manifest Jellyfin reads from the plugin folder. -->
   <Target Name="WritePluginMeta" BeforeTargets="BeforeBuild">
     <PropertyGroup>
@@ -38,6 +44,8 @@
   "category": "General",
   "description": "Switch between the Jellyfin accounts saved on a shared device without signing out.",
   "guid": "80f9de45-eed8-4c2b-97bd-25de685527d1",
+  "imagePath": "icon.png",
+  "imageUrl": "https://raw.githubusercontent.com/pathimmersive/jellyfin-plugin-quick-switch/main/images/icon.png",
   "name": "Quick Switch",
   "overview": "Fast account switching for shared TVs and devices.",
   "owner": "quick-switch",

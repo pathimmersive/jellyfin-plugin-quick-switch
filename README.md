@@ -4,6 +4,8 @@ Quick Switch is a Jellyfin server plugin that adds fast switching between Jellyf
 
 **Quick Switch is an unofficial, third-party plugin.** It is not made, endorsed or supported by the Jellyfin project, and it does not use the Jellyfin logo.
 
+![The Quick Switch "Who's watching?" screen in jellyfin-web's TV layout: four saved accounts, Robin, Sam, Jordan and Alex, as round tiles, with Alex marked "Watching now", an Add Account tile, a Manage Accounts button, and remote hints for OK, Back and the red button.](images/screenshot.png)
+
 ## Status
 
 Early development; there is no release yet and the switcher is not usable. The plugin builds, adds its script to jellyfin-web as the page is served, and does nothing else so far.

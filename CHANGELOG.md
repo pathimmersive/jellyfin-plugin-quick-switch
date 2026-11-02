@@ -13,3 +13,4 @@ All notable changes to Quick Switch are listed here. The format follows [Keep a 
 - Full control with a TV remote (arrows, OK, Back) as well as mouse, touch and keyboard.
 - A saved account whose sign-in stopped working asks for its password again.
 - Installation from a Jellyfin plugin repository, without any other plugin.
+- A plugin image in Dashboard → Plugins and in the plugin repository's catalog.

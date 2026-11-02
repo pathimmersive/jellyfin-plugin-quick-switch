@@ -171,6 +171,11 @@ restart_and_check() {
   entry="$(grep "\"Name\":\"$plugin_name\"" <<<"$entries" | grep '"Status":"Active"' || true)"
   [[ "$(grep -c . <<<"$entry")" -eq 1 ]] || fail "expected one Active $plugin_name, /Plugins lists: $(grep "\"Name\":\"$plugin_name\"" <<<"$entries" || echo none)"
   grep -q "\"Version\":\"$v\"" <<<"$entry" || fail "the Active $plugin_name is not version $v: $entry"
+  grep -q '"HasImage":true' <<<"$entry" || fail "the installed $plugin_name has no image in Dashboard → Plugins"
+  local id
+  id="$(grep -o '"Id":"[^"]*"' <<<"$entry" | head -n 1 | cut -d'"' -f4)"
+  curl -sSf -o "$served" -H "Authorization: $auth, Token=\"$token\"" "$api/Plugins/$id/$v/Image" || fail "GET the installed $plugin_name's image failed"
+  cmp -s "$served" images/icon.png || fail "the installed $plugin_name's image is not images/icon.png"
 
   curl -sSf -o "$served" "$api/$script_path" || fail "GET /$script_path failed"
   cmp -s "$served" src/switcher/quick-switch.js || fail "GET /$script_path is not src/switcher/quick-switch.js"
@@ -178,7 +183,7 @@ restart_and_check() {
   page="$(curl -sSf "$api/web/index.html")" || fail "GET /web/index.html failed"
   grep -qF "<script src=\"../$script_path?v=$v\"></script>" <<<"$page" \
     || fail "index.html does not load $script_path?v=$v; it has: $(grep -o '<script src="[^"]*QuickSwitch[^"]*"' <<<"$page" || echo 'no switcher tag')"
-  echo "PASS: $plugin_name $v is Active, the switcher is served, and index.html loads it as ?v=$v"
+  echo "PASS: $plugin_name $v is Active with its image, the switcher is served, and index.html loads it as ?v=$v"
 }
 
 wait_for_log "Startup complete"
