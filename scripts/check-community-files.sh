@@ -18,7 +18,7 @@ fail() { echo "FAIL: $*" >&2; missing=$((missing + 1)); }
 pass() { echo "PASS: $*"; }
 
 for file in README.md LICENSE CONTRIBUTING.md CODE_OF_CONDUCT.md SECURITY.md THIRD_PARTY_NOTICES.md \
-    CHANGELOG.md .github/pull_request_template.md .github/ISSUE_TEMPLATE/bug_report.yml \
+    CHANGELOG.md ROADMAP.md .github/pull_request_template.md .github/ISSUE_TEMPLATE/bug_report.yml \
     .github/ISSUE_TEMPLATE/feature_request.yml; do
     if [ -s "$file" ]; then pass "$file"; else fail "$file is missing or empty"; fi
 done
@@ -84,6 +84,12 @@ if [ -f README.md ]; then
     else
         fail "README.md does not say the plugin is unofficial"
     fi
+fi
+
+if grep -q '(ROADMAP.md)' README.md 2>/dev/null; then
+    pass "README.md links ROADMAP.md"
+else
+    fail "README.md does not link ROADMAP.md"
 fi
 
 if grep -q 'acknowledged within 7 days' SECURITY.md 2>/dev/null; then

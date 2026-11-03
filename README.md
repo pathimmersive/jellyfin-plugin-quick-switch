@@ -55,7 +55,7 @@ bash scripts/coverage.sh               # both test suites, with a coverage summa
 
 ## Questions, contributing and security
 
-Ask questions and share ideas in [Discussions](https://github.com/pathimmersive/jellyfin-plugin-quick-switch/discussions), and report bugs as [issues](https://github.com/pathimmersive/jellyfin-plugin-quick-switch/issues/new/choose). See [CONTRIBUTING.md](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md). Report security problems privately, as [SECURITY.md](SECURITY.md) describes. Changes are listed in [CHANGELOG.md](CHANGELOG.md).
+Ask questions and share ideas in [Discussions](https://github.com/pathimmersive/jellyfin-plugin-quick-switch/discussions), and report bugs as [issues](https://github.com/pathimmersive/jellyfin-plugin-quick-switch/issues/new/choose). See [CONTRIBUTING.md](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md). Report security problems privately, as [SECURITY.md](SECURITY.md) describes. Changes are listed in [CHANGELOG.md](CHANGELOG.md), and where the plugin is heading in [ROADMAP.md](ROADMAP.md).
 
 ## License
 

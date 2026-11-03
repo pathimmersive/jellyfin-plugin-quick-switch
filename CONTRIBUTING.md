@@ -5,7 +5,7 @@ Thanks for your interest. Quick Switch is in early development, so please open a
 ## Asking, suggesting and reporting
 
 - **Questions** about installing, setting up or using Quick Switch go in [Discussions → Q&A](https://github.com/pathimmersive/jellyfin-plugin-quick-switch/discussions/categories/q-a).
-- **Ideas** can be talked through in [Discussions → Ideas](https://github.com/pathimmersive/jellyfin-plugin-quick-switch/discussions/categories/ideas) before a feature request.
+- **Ideas** can be talked through in [Discussions → Ideas](https://github.com/pathimmersive/jellyfin-plugin-quick-switch/discussions/categories/ideas) before a feature request. [ROADMAP.md](ROADMAP.md) lists the directions already planned and what is out of scope.
 - **Bugs and feature requests** are issues, opened with their forms.
 
 For a bug, use the bug report form. Include the Jellyfin server version, the Quick Switch version or commit, the client app and device, and the steps that show the problem. Security problems go through private reporting instead; see [SECURITY.md](SECURITY.md).
