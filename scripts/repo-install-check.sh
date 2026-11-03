@@ -6,10 +6,13 @@
 # index.html loads it. No other plugin is installed.
 #
 # Usage: scripts/repo-install-check.sh [--upgrade] [--corrupt-zip]
+#        scripts/repo-install-check.sh --from <manifest URL>
 #   --upgrade      also package a newer version, install it over the first from the
 #                  same repository, and check only the newer one is active
 #   --corrupt-zip  change a zip after its checksum is computed (the newer one with
 #                  --upgrade); its install must fail
+#   --from <url>   install the newest version a published repository lists instead
+#                  of packaging one, after checking its zip against the manifest's MD5
 #
 # Needs: bash, curl, docker, the .NET 10 SDK.
 # Environment:
@@ -24,13 +27,20 @@ image="${JELLYFIN_IMAGE:-jellyfin/jellyfin:12.2.20261005-225228}"
 timeout="${CHECK_TIMEOUT:-180}"
 corrupt=0
 upgrade=0
-for arg in "$@"; do
-  case "$arg" in
+from=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
     --corrupt-zip) corrupt=1 ;;
     --upgrade) upgrade=1 ;;
-    *) echo "unknown argument: $arg" >&2; exit 2 ;;
+    --from) from="${2:-}"; [[ -n "$from" ]] || { echo "--from needs a manifest URL" >&2; exit 2; }; shift ;;
+    *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
+  shift
 done
+if [[ -n "$from" && $((upgrade + corrupt)) -gt 0 ]]; then
+  echo "--from installs a published release; it takes no --upgrade or --corrupt-zip" >&2
+  exit 2
+fi
 
 meta="$(bash scripts/plugin-meta.sh)"
 plugin_name="$(sed -n 's/.*"name": *"\([^"]*\)".*/\1/p' "$meta")"
@@ -61,33 +71,54 @@ fail() {
   exit 1
 }
 
+if [[ -n "$from" ]]; then
+  echo "== read the published repository $from"
+  published="$(curl -sSfL "$from")" || fail "GET $from failed: the repository is not published there"
+  # Versions are listed newest first.
+  version="$(grep -o '"version": *"[^"]*"' <<<"$published" | head -n 1 | sed 's/.*"\([^"]*\)"$/\1/')"
+  source_url="$(grep -o '"sourceUrl": *"[^"]*"' <<<"$published" | head -n 1 | sed 's/.*"\([^"]*\)"$/\1/')"
+  checksum="$(grep -o '"checksum": *"[^"]*"' <<<"$published" | head -n 1 | sed 's/.*"\([^"]*\)"$/\1/' | tr 'A-F' 'a-f')"
+  [[ -n "$version" && -n "$source_url" && -n "$checksum" ]] || fail "$from lists no version with a sourceUrl and checksum"
+  grep -q "\"name\": *\"$plugin_name\"" <<<"$published" || fail "$from does not list $plugin_name"
+  curl -sSfL -o "$served" "$source_url" || fail "GET $source_url failed"
+  actual="$(md5sum "$served" | cut -d ' ' -f 1)"
+  [[ "$actual" == "$checksum" ]] || fail "the $plugin_name $version zip's MD5 is $actual, but $from says $checksum"
+  echo "PASS: $from lists $plugin_name $version, and its zip matches the manifest's MD5"
+  repo_url="$from"
+  versions=("$version")
+fi
+
 # The newer version is packaged apart and joins the manifest only after the first is
 # checked, as a new release would; listed from the start, Jellyfin's own plugin
 # update would install it at the first restart.
 next_dir="$out_dir/next"
 rm -rf "$out_dir"
-versions=("$version")
+[[ -z "$from" ]] && versions=("$version")
 [[ $upgrade -eq 1 ]] && versions+=("$next")
-echo "== package $version"
-bash scripts/package.sh "$version" "$out_dir" "http://$repo_host" "Local repository check"
-if [[ $upgrade -eq 1 ]]; then
-  echo "== package $next"
-  bash scripts/package.sh "$next" "$next_dir" "http://$repo_host" "Local repository check"
-fi
-if [[ $corrupt -eq 1 ]]; then
-  last_dir="$out_dir"
-  [[ $upgrade -eq 1 ]] && last_dir="$next_dir"
-  echo "== corrupt the $plugin_name ${versions[-1]} zip after its checksum was computed"
-  printf 'corrupted' >>"$last_dir/quick-switch_${versions[-1]}.zip"
-fi
-bash scripts/build-manifest.sh "$out_dir/manifest.json" --entries "$out_dir"
+if [[ -z "$from" ]]; then
+  echo "== package $version"
+  bash scripts/package.sh "$version" "$out_dir" "http://$repo_host" "Local repository check"
+  if [[ $upgrade -eq 1 ]]; then
+    echo "== package $next"
+    bash scripts/package.sh "$next" "$next_dir" "http://$repo_host" "Local repository check"
+  fi
+  if [[ $corrupt -eq 1 ]]; then
+    last_dir="$out_dir"
+    [[ $upgrade -eq 1 ]] && last_dir="$next_dir"
+    echo "== corrupt the $plugin_name ${versions[-1]} zip after its checksum was computed"
+    printf 'corrupted' >>"$last_dir/quick-switch_${versions[-1]}.zip"
+  fi
+  bash scripts/build-manifest.sh "$out_dir/manifest.json" --entries "$out_dir"
 
-echo "== serve the repository"
-docker network create "$network" >/dev/null
-docker create --name "$repo_container" --network "$network" --network-alias "$repo_host" nginx:alpine >/dev/null
-docker cp "$out_dir/manifest.json" "$repo_container:/usr/share/nginx/html/manifest.json"
-docker cp "$out_dir/quick-switch_$version.zip" "$repo_container:/usr/share/nginx/html/"
-docker start "$repo_container" >/dev/null
+  echo "== serve the repository"
+  docker network create "$network" >/dev/null
+  docker create --name "$repo_container" --network "$network" --network-alias "$repo_host" nginx:alpine >/dev/null
+  docker cp "$out_dir/manifest.json" "$repo_container:/usr/share/nginx/html/manifest.json"
+  docker cp "$out_dir/quick-switch_$version.zip" "$repo_container:/usr/share/nginx/html/"
+  docker start "$repo_container" >/dev/null
+else
+  docker network create "$network" >/dev/null
+fi
 
 echo "== start $image"
 docker pull --quiet "$image" >/dev/null
@@ -222,4 +253,4 @@ if [[ $upgrade -eq 1 ]]; then
   restart_and_check "$next"
 fi
 
-echo "PASS: $image (Jellyfin ${server_version:-unknown}) installed $plugin_name ${versions[*]} from its repository, with no other plugin"
+echo "PASS: $image (Jellyfin ${server_version:-unknown}) installed $plugin_name ${versions[*]} from ${from:-its repository}, with no other plugin"

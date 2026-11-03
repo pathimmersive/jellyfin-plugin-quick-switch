@@ -22,7 +22,7 @@ public class WebPatchesTests
     [Fact]
     public void TheTagCarriesThePluginVersionSoAnUpgradeChangesItsUrl()
     {
-        Assert.Contains("quick-switch.js?v=0.1.0.0\"", WebPatches.PatchIndex(Index));
+        Assert.Contains("quick-switch.js?v=" + typeof(Plugin).Assembly.GetName().Version + "\"", WebPatches.PatchIndex(Index));
     }
 
     [Fact]
