@@ -21,6 +21,8 @@ For a bug, use the bug report form. Include the Jellyfin server version, the Qui
 
 The switcher script in `src/switcher` is plain ES5 with no build step, because TV apps run older browser engines. Keep it that way; ESLint checks it as ES5, and `package.json` holds only development tools. Editors pick up the indentation from `.editorconfig`.
 
+The switcher's only public surface is `window.QuickSwitch`, with `version`, `open()` and `close()`; anything else may change in any release. Its saved accounts are in `localStorage` under `quickswitch`, in a private format with a version number (`v`). A change to that format keeps older stores readable, and keeps a newer version's fields when it writes, so going back a release loses nothing. The unit tests reach the store through a `QuickSwitchTestHook` object they provide before loading the script.
+
 ## Following Jellyfin releases
 
 Jellyfin, jellyfin-web and File Transformation change on their own schedules, so the plugin is checked against their newest releases every week.

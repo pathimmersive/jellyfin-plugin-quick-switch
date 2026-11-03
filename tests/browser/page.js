@@ -10,7 +10,7 @@ function launch() {
     return chromium.launch({ headless: !process.env.QS_HEADED, ...(channel ? { channel } : {}) })
 }
 
-const VIEWPORTS = { tv: { width: 1280, height: 720 }, desktop: { width: 1280, height: 800 } }
+const VIEWPORTS = { tv: { width: 1280, height: 720 }, desktop: { width: 1280, height: 800 }, 'desktop-legacy': { width: 1280, height: 800 } }
 
 async function waitFor(fn, test, timeout) {
     const until = Date.now() + timeout
@@ -31,7 +31,8 @@ async function newPage(browser, server, layout) {
     return { context, page }
 }
 
-async function signIn(page, account) {
+// Signs in with jellyfin-web's manual form; `remember: false` unticks Remember me.
+async function signIn(page, account, { remember = true } = {}) {
     const name = page.locator('#txtManualName')
     const until = Date.now() + 30000
     while (!(await name.isVisible())) {
@@ -41,6 +42,7 @@ async function signIn(page, account) {
     }
     await name.fill(account.name)
     await page.locator('#txtManualPassword').fill(account.password)
+    await page.locator('.manualLoginForm .chkRememberLogin').setChecked(remember, { force: true })
     await page.locator('.manualLoginForm button[type="submit"]').click()
     await page.waitForFunction((id) => window.ApiClient && window.ApiClient.getCurrentUserId() === id && document.querySelector('#indexPage:not(.hide)'), account.id, { timeout: 30000 })
 }

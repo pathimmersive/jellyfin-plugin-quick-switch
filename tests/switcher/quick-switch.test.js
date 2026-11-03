@@ -43,24 +43,25 @@ function memoryStorage() {
 // Values made inside the script's context have that context's prototypes; compare them as plain data.
 const plain = (value) => JSON.parse(JSON.stringify(value))
 
-function wrap(quickSwitch) {
+// The internals, as the script hands them to the test hook.
+function wrap(hook) {
     return {
         store: {
-            list: (serverId) => plain(quickSwitch.store.list(serverId)),
-            save: quickSwitch.store.save,
-            forget: quickSwitch.store.forget,
-            move: quickSwitch.store.move,
-            markStale: quickSwitch.store.markStale,
-            startAdding: quickSwitch.store.startAdding,
-            addingFrom: quickSwitch.store.addingFrom,
-            stopAdding: quickSwitch.store.stopAdding,
+            list: (serverId) => plain(hook.store.list(serverId)),
+            save: hook.store.save,
+            forget: hook.store.forget,
+            move: hook.store.move,
+            markStale: hook.store.markStale,
+            startAdding: hook.store.startAdding,
+            addingFrom: hook.store.addingFrom,
+            stopAdding: hook.store.stopAdding,
         },
-        avatar: (...args) => plain(quickSwitch.avatar(...args)),
+        avatar: (...args) => plain(hook.avatar(...args)),
     }
 }
 
 function withStore() {
-    return wrap(load({ localStorage: memoryStorage() }).QuickSwitch)
+    return wrap(load({ localStorage: memoryStorage(), QuickSwitchTestHook: {} }).QuickSwitchTestHook)
 }
 
 test('saves accounts per server, in the order they were saved', () => {
@@ -153,10 +154,83 @@ test('remembers an add in progress per server until it finishes or is cancelled'
 test('survives unreadable saved data', () => {
     const window = { localStorage: memoryStorage() }
     window.localStorage.setItem('quickswitch', '{not json')
-    const { store } = wrap(load(window).QuickSwitch)
+    window.QuickSwitchTestHook = {}
+    const { store } = wrap(load(window).QuickSwitchTestHook)
 
     assert.deepEqual(store.list('s'), [])
     store.save('s', { UserId: 'a', Name: 'Al', AccessToken: 't' })
+    assert.equal(store.list('s').length, 1)
+})
+
+test('window.QuickSwitch offers only its version, open and close', () => {
+    const window = load({ localStorage: memoryStorage() })
+
+    assert.deepEqual(Object.keys(window.QuickSwitch).sort(), ['close', 'open', 'version'])
+    assert.equal(window.QuickSwitchTestHook, undefined)
+})
+
+test('the internals go only to a test hook provided before the script runs', () => {
+    const window = load({ localStorage: memoryStorage(), QuickSwitchTestHook: {} })
+
+    assert.equal(typeof window.QuickSwitchTestHook.store.list, 'function')
+    assert.equal(typeof window.QuickSwitchTestHook.avatar, 'function')
+    assert.deepEqual(Object.keys(window.QuickSwitch).sort(), ['close', 'open', 'version'])
+})
+
+// A store as the first release writes it.
+const STORE_1 = {
+    v: 1,
+    servers: { s: [{ UserId: 'a', Name: 'Al', AccessToken: 'ta', PrimaryImageTag: null, Addresses: ['http://server/jf'] }] },
+}
+
+test('reads a store in the first release’s format, and keeps it at version 1', () => {
+    const window = { localStorage: memoryStorage(), QuickSwitchTestHook: {} }
+    window.localStorage.setItem('quickswitch', JSON.stringify(STORE_1))
+    const { store } = wrap(load(window).QuickSwitchTestHook)
+
+    assert.deepEqual(store.list('s'), STORE_1.servers.s)
+    store.save('s', { UserId: 'b', Name: 'Bo', AccessToken: 'tb' })
+    assert.equal(JSON.parse(window.localStorage.getItem('quickswitch')).v, 1)
+})
+
+test('a store saved before stores had a version is written as version 1', () => {
+    const window = { localStorage: memoryStorage(), QuickSwitchTestHook: {} }
+    window.localStorage.setItem('quickswitch', JSON.stringify({ servers: STORE_1.servers }))
+    const { store } = wrap(load(window).QuickSwitchTestHook)
+
+    store.save('s', { UserId: 'b', Name: 'Bo', AccessToken: 'tb' })
+
+    const written = JSON.parse(window.localStorage.getItem('quickswitch'))
+    assert.equal(written.v, 1)
+    assert.deepEqual(written.servers.s.map((a) => a.UserId), ['a', 'b'])
+})
+
+test('a store from a newer version keeps its version and the fields this one doesn’t know', () => {
+    const window = { localStorage: memoryStorage(), QuickSwitchTestHook: {} }
+    window.localStorage.setItem('quickswitch', JSON.stringify({
+        v: 2,
+        later: { kept: true },
+        servers: { s: [{ UserId: 'a', Name: 'Al', AccessToken: 'old', Addresses: ['http://server/jf'], Later: 'x' }] },
+    }))
+    const { store } = wrap(load(window).QuickSwitchTestHook)
+
+    store.save('s', { UserId: 'a', Name: 'Al', AccessToken: 'new', Address: 'http://server/jf/' })
+
+    const written = JSON.parse(window.localStorage.getItem('quickswitch'))
+    assert.equal(written.v, 2)
+    assert.deepEqual(written.later, { kept: true })
+    assert.equal(written.servers.s[0].Later, 'x')
+    assert.equal(written.servers.s[0].AccessToken, 'new')
+})
+
+test('an unreadable store is kept aside before the switcher starts afresh', () => {
+    const window = { localStorage: memoryStorage(), QuickSwitchTestHook: {} }
+    window.localStorage.setItem('quickswitch', '{not json')
+    const { store } = wrap(load(window).QuickSwitchTestHook)
+
+    store.save('s', { UserId: 'a', Name: 'Al', AccessToken: 't' })
+
+    assert.equal(window.localStorage.getItem('quickswitch-unreadable'), '{not json')
     assert.equal(store.list('s').length, 1)
 })
 
@@ -225,8 +299,9 @@ function watching(signedIn, options, storage = memoryStorage(), clock = null) {
         ApiClient: apiClient(signedIn, options),
         XMLHttpRequest: FakeXhr,
         setInterval: (fn) => { tick = fn },
+        QuickSwitchTestHook: {},
     })
-    return { tick: () => tick(), sent, store: wrap(window.QuickSwitch).store }
+    return { tick: () => tick(), sent, store: wrap(window.QuickSwitchTestHook).store }
 }
 
 test('saves whoever signs in once the server confirms who they are', () => {
@@ -241,7 +316,7 @@ test('saves whoever signs in once the server confirms who they are', () => {
     assert.equal(sent[0].headers.Authorization,
         'MediaBrowser Client="Jellyfin Web", Device="TV", DeviceId="device-1", Version="10.11.0", Token="t1"')
     sent[0].answer(200, { Id: 'a', Name: 'Al', PrimaryImageTag: 'img' })
-    assert.deepEqual(store.list('s'), [{ UserId: 'a', Name: 'Al', AccessToken: 't1', PrimaryImageTag: 'img', Addresses: ['http://server/jf'] }])
+    assert.deepEqual(store.list('s'), [{ UserId: 'a', Name: 'Al', AccessToken: 't1', PrimaryImageTag: 'img', Admin: false, Addresses: ['http://server/jf'] }])
 })
 
 test('asks the server only when the signed-in account or its token changes', () => {
@@ -331,15 +406,52 @@ test('an account that is not an administrator is saved without asking', () => {
     assert.equal(store.list('s').length, 1)
 })
 
-test('an administrator already saved keeps its place when it signs in again', () => {
+test('an administrator saved as one keeps its place when it signs in again', () => {
     const signedIn = { serverId: 's', userId: 'a', token: 't1' }
     const { tick, sent, store } = watching(signedIn)
-    store.save('s', { UserId: 'a', Name: 'Al', AccessToken: 't0' })
+    store.save('s', { UserId: 'a', Name: 'Al', AccessToken: 't0', Admin: true })
 
     tick()
     sent[0].answer(200, { Id: 'a', Name: 'Al', Policy: { IsAdministrator: true } })
 
-    assert.equal(store.list('s')[0].AccessToken, 't1')
+    assert.deepEqual(store.list('s').map((a) => [a.AccessToken, a.Admin]), [['t1', true]])
+})
+
+test('a saved account made an administrator since is not kept as one without asking', () => {
+    const signedIn = { serverId: 's', userId: 'a', token: 't1' }
+    const { tick, sent, store } = watching(signedIn)
+    store.save('s', { UserId: 'a', Name: 'Al', AccessToken: 't0', Admin: false })
+
+    tick()
+    sent[0].answer(200, { Id: 'a', Name: 'Al', Policy: { IsAdministrator: true } })
+
+    assert.deepEqual(store.list('s').map((a) => [a.AccessToken, a.Admin]), [['t0', false]])
+})
+
+test('a sign-in with Remember me unticked is not saved, and a copy saved before is forgotten', () => {
+    const storage = memoryStorage()
+    storage.setItem('enableAutoLogin', 'false')
+    const signedIn = { serverId: 's', userId: 'b', token: 't2' }
+    const { tick, sent, store } = watching(signedIn, undefined, storage)
+    store.save('s', { UserId: 'b', Name: 'Bo', AccessToken: 't1', Address: 'http://server/jf/' })
+    store.save('s', { UserId: 'c', Name: 'Cy', AccessToken: 'tc', Address: 'http://server/jf/' })
+
+    tick()
+    sent[0].answer(200, { Id: 'b', Name: 'Bo' })
+
+    assert.deepEqual(store.list('s').map((a) => a.UserId), ['c'])
+    assert.equal(sent.filter((x) => x.method === 'POST').length, 0)
+})
+
+test('a sign-in with Remember me ticked is saved', () => {
+    const storage = memoryStorage()
+    storage.setItem('enableAutoLogin', 'true')
+    const { tick, sent, store } = watching({ serverId: 's', userId: 'b', token: 't1' }, undefined, storage)
+
+    tick()
+    sent[0].answer(200, { Id: 'b', Name: 'Bo' })
+
+    assert.deepEqual(store.list('s').map((a) => a.UserId), ['b'])
 })
 
 test('an administrator whose sign-in was not saved is not asked about again until it signs in again', () => {
