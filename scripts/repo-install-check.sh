@@ -160,13 +160,17 @@ restart_and_check() {
   docker restart "$server_container" >/dev/null
   wait_for_log "Loaded plugin: \"?${plugin_name}\"? \"?${v}\"?"
   find_api
+  # The server answers unauthenticated calls before authenticated ones, which it can
+  # reset for a while after a restart; wait until GET /Plugins answers.
   local deadline=$((SECONDS + timeout))
-  until curl -sf "$api/System/Info/Public" >/dev/null 2>&1; do
-    (( SECONDS < deadline )) || fail "the server did not answer after the restart"
+  until plugins="$(curl -sf -m 10 "$api/Plugins" -H "Authorization: $auth, Token=\"$token\"" 2>/dev/null)" && [[ "$plugins" == \[* ]]; do
+    if (( SECONDS >= deadline )); then
+      docker logs --tail 40 "$server_container" >&2 2>&1 || true
+      fail "the server did not answer an authenticated call after the restart"
+    fi
     sleep 2
   done
 
-  plugins="$(call GET /Plugins)"
   entries="$(sed 's/},{/}\n{/g' <<<"$plugins")"
   entry="$(grep "\"Name\":\"$plugin_name\"" <<<"$entries" | grep '"Status":"Active"' || true)"
   [[ "$(grep -c . <<<"$entry")" -eq 1 ]] || fail "expected one Active $plugin_name, /Plugins lists: $(grep "\"Name\":\"$plugin_name\"" <<<"$entries" || echo none)"
