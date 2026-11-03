@@ -32,6 +32,10 @@ jobs:
       # Runs the plugin and switcher tests and prints their coverage.
       - name: Test, with coverage
         run: bash scripts/coverage.sh
+      - name: Lint the switcher and its tests
+        run: |
+          npm ci --no-audit --no-fund
+          npm run lint
       - run: bash scripts/check-community-files.sh
       - name: Audit NuGet packages for known vulnerabilities
         run: bash scripts/audit-packages.sh

@@ -61,7 +61,7 @@ else
 fi
 
 dependabot=.github/dependabot.yml
-for ecosystem in nuget github-actions; do
+for ecosystem in nuget npm github-actions; do
     if grep -q -E "package-ecosystem: *\"?$ecosystem\"?" "$dependabot" 2>/dev/null; then
         pass "$dependabot updates $ecosystem"
     else

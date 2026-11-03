@@ -10,6 +10,12 @@ updates:
     ignore:
       - dependency-name: "Jellyfin.*"
 
+  # ESLint, the only npm dependency; the switcher itself has no build step.
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
