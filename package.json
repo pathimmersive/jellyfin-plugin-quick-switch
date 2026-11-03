@@ -1,0 +1,13 @@
+{
+  "name": "jellyfin-plugin-quick-switch",
+  "private": true,
+  "description": "Development tools only: the switcher script itself has no build step.",
+  "license": "GPL-3.0-or-later",
+  "scripts": {
+    "lint": "eslint src/switcher tests/switcher"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "eslint": "10.13.0"
+  }
+}

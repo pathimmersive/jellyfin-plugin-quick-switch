@@ -13,13 +13,13 @@ For a bug, use the bug report form. Include the Jellyfin server version, the Qui
 ## Making a change
 
 1. Fork the repository and branch from `main`, naming the branch `<type>/<short-name>`, for example `fix/webos-back-key`.
-2. Build and test as the [README](README.md#building-and-testing) describes. A change should pass `dotnet test`, the switcher tests, `bash scripts/check-community-files.sh` and, for server changes, `bash scripts/smoke-test.sh`. A change to packaging should also pass `bash scripts/repo-install-check.sh` and `bash scripts/repo-install-check.sh --upgrade`, which install the plugin on Jellyfin from a plugin repository and upgrade it to a newer version. Note anything checked by hand, with the client, device and Jellyfin version. `bash scripts/coverage.sh` runs both test suites and prints their coverage, as CI does; a new behaviour should come with a test, but no coverage percentage fails a build.
+2. Build and test as the [README](README.md#building-and-testing) describes. A change should pass `dotnet test`, the switcher tests, `npm run lint`, `bash scripts/check-community-files.sh` and, for server changes, `bash scripts/smoke-test.sh`. A change to packaging should also pass `bash scripts/repo-install-check.sh` and `bash scripts/repo-install-check.sh --upgrade`, which install the plugin on Jellyfin from a plugin repository and upgrade it to a newer version. Note anything checked by hand, with the client, device and Jellyfin version. `bash scripts/coverage.sh` runs both test suites and prints their coverage, as CI does; a new behaviour should come with a test, but no coverage percentage fails a build.
 3. Write the pull request title as a [Conventional Commits](https://www.conventionalcommits.org/) subject: `feat:`, `fix:`, `docs:`, `test:`, `ci:` or `chore:`, then what changed, in 72 characters or fewer.
 4. Fill in the pull request template: what changed and why, and how it was checked. Link a related issue with `Fixes #N`.
 5. For a change users would notice, add a line under **Unreleased** in [CHANGELOG.md](CHANGELOG.md), in the section that fits (Added, Changed, Fixed, Removed, Security).
 6. CI must pass before the change can merge. Pull requests are squash-merged into one commit on `main`, built from the pull request's commits, so give them Conventional Commits messages too.
 
-The switcher script in `src/switcher` is plain ES5 with no build step, because TV apps run older browser engines. Keep it that way.
+The switcher script in `src/switcher` is plain ES5 with no build step, because TV apps run older browser engines. Keep it that way; ESLint checks it as ES5, and `package.json` holds only development tools. Editors pick up the indentation from `.editorconfig`.
 
 ## Following Jellyfin releases
 

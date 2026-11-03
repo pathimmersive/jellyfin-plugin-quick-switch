@@ -324,7 +324,7 @@
         xhr.setRequestHeader('Authorization', authHeader(token));
         xhr.timeout = 10000;
         xhr.onload = function () {
-            var data = null;
+            var data;
             try { data = JSON.parse(xhr.responseText); } catch (e) { data = null; }
             done(xhr.status, data);
         };
@@ -411,9 +411,9 @@
             var before = readStore().signedIn;
             rememberSignedIn(null);
             if (before && typeof before === 'object' && !clearedOnPurpose(before.serverId)) {
-                var saved = list(before.serverId);
-                var at = indexOf(saved, before.userId);
-                if (at !== -1 && tokenMark(saved[at].AccessToken) === before.mark) {
+                var previous = list(before.serverId);
+                var previousAt = indexOf(previous, before.userId);
+                if (previousAt !== -1 && tokenMark(previous[previousAt].AccessToken) === before.mark) {
                     markSignedOut(before.serverId, before.userId);
                 }
             }

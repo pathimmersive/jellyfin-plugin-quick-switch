@@ -64,11 +64,12 @@ Quick Switch runs in clients that load jellyfin-web from your server: web browse
 
 ## Building and testing
 
-You need the .NET 10 SDK, Node.js 22 or later, and bash.
+You need the .NET 10 SDK, Node.js 22 or later with npm, and bash. The build runs the .NET analyzers and treats their warnings as errors.
 
 ```bash
 dotnet test                            # builds the plugin and runs its tests
 node --test "tests/switcher/*.test.js" # switcher script tests
+npm ci && npm run lint                 # ESLint on the switcher and its tests
 bash scripts/check-community-files.sh  # community files
 bash scripts/coverage.sh               # both test suites, with a coverage summary
 bash scripts/audit-packages.sh         # NuGet packages with known vulnerabilities

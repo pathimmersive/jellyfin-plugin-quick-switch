@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Security.Cryptography;
 
@@ -7,6 +8,7 @@ namespace Jellyfin.Plugin.QuickSwitch;
 /// <summary>
 /// The switcher script and its stylesheet, embedded in the plugin assembly.
 /// </summary>
+[SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "A service the controller is given; its members stay instance members so it can be injected.")]
 public class SwitcherScript
 {
     /// <summary>
