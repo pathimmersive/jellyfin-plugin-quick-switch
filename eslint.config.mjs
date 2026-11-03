@@ -5,7 +5,7 @@ import js from '@eslint/js';
 const browser = Object.fromEntries([
     'window', 'document', 'navigator', 'location', 'localStorage', 'console',
     'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'requestAnimationFrame',
-    'XMLHttpRequest', 'Event', 'CustomEvent', 'MutationObserver', 'getComputedStyle',
+    'XMLHttpRequest', 'Event', 'CustomEvent', 'MutationObserver', 'getComputedStyle', 'performance',
 ].map((name) => [name, 'readonly']));
 
 export default [

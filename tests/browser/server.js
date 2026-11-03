@@ -67,7 +67,8 @@ async function waitReady(server) {
     throw new Error(`Jellyfin at ${server.base} did not become ready`)
 }
 
-async function api(server, path, { method = 'GET', token, body } = {}) {
+// A request to the test server, as the test client; returns the status and body.
+async function request(server, path, { method = 'GET', token, body } = {}) {
     const response = await fetch(server.base + path, {
         method,
         headers: { Authorization: token ? `${CLIENT}, Token="${token}"` : CLIENT, ...(body ? { 'Content-Type': 'application/json' } : {}) },
@@ -76,8 +77,14 @@ async function api(server, path, { method = 'GET', token, body } = {}) {
     const text = await response.text()
     let data = text
     try { data = JSON.parse(text) } catch { /* not JSON */ }
-    if (!response.ok) { throw new Error(`${method} ${path}: HTTP ${response.status} ${text.slice(0, 200)}`) }
     return { status: response.status, data }
+}
+
+// The same, failing on any refused request.
+async function api(server, path, options = {}) {
+    const response = await request(server, path, options)
+    if (response.status >= 400) { throw new Error(`${options.method || 'GET'} ${path}: HTTP ${response.status} ${String(typeof response.data === 'string' ? response.data : JSON.stringify(response.data)).slice(0, 200)}`) }
+    return response
 }
 
 // alex administers the server and sees the Videos library; sam has no
@@ -119,4 +126,4 @@ async function signOutToken(server, token) {
     await fetch(`${server.base}/Sessions/Logout`, { method: 'POST', headers: { Authorization: `${CLIENT}, Token="${token}"` } }).catch(() => {})
 }
 
-module.exports = { startServer, api, signInByApi, tokenStatus, signOutToken }
+module.exports = { startServer, api, request, signInByApi, tokenStatus, signOutToken }

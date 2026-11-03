@@ -53,10 +53,11 @@ jobs:
         with:
           node-version: 24
       - run: npm ci --no-audit --no-fund
-      - name: Browser tests
+      # Runs the browser tests and prints their coverage of the switcher beside the unit tests'.
+      - name: Browser tests, with coverage
         env:
           QS_BROWSER_CHANNEL: chrome
-        run: npm run test:browser
+        run: bash scripts/coverage.sh --browser
 
   smoke-test:
     runs-on: ubuntu-24.04

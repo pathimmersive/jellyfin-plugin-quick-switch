@@ -3,10 +3,20 @@
 # each. It reports coverage; it does not fail on a percentage. It fails if a
 # test fails or a report is missing.
 #
-# Usage: scripts/coverage.sh
+# Usage: scripts/coverage.sh [--browser]
 #
-# Needs: bash, the .NET 10 SDK, Node.js 22 or later.
+# --browser also runs the browser tests (npm run test:browser) and prints
+# their coverage of the switcher; CI does this in its browser job.
+#
+# Needs: bash, the .NET 10 SDK, Node.js 22 or later; Docker, npm ci and a
+# Chromium-based browser for --browser.
 set -euo pipefail
+
+case "${1:-}" in
+    "") browser=0 ;;
+    --browser) browser=1 ;;
+    *) echo "usage: $0 [--browser]" >&2; exit 2 ;;
+esac
 
 repo="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$repo"
@@ -29,7 +39,12 @@ switcher="$(grep -E '^.{0,4}[[:space:]]*quick-switch\.js[[:space:]]*\|' "$out/sw
 [ -n "$switcher" ] || fail "the switcher coverage report does not include quick-switch.js"
 column() { echo "$switcher" | awk -F'|' -v n="$1" '{ gsub(/ /, "", $n); print $n "%" }'; }
 
+if [ "$browser" -eq 1 ]; then
+    QS_COVERAGE="$out/browser" npm run -s test:browser
+fi
+
 echo
 echo "Coverage"
 echo "  plugin   lines $(rate line-rate), branches $(rate branch-rate)"
 echo "  switcher lines $(column 2), branches $(column 3), functions $(column 4)"
+[ "$browser" -eq 0 ] || node tests/browser/coverage.js "$out/browser"

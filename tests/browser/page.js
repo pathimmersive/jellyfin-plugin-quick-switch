@@ -1,6 +1,7 @@
 // Drives jellyfin-web with the switcher in it, and reads what the switcher shows.
 const { chromium } = require('playwright-core')
 const { signOutToken } = require('./server')
+const coverage = require('./coverage')
 
 // QS_BROWSER_CHANNEL=chrome uses an installed Google Chrome (as CI does);
 // otherwise Playwright's Chromium (npx playwright-core install chromium).
@@ -25,6 +26,7 @@ async function newPage(browser, server, layout) {
     const context = await browser.newContext({ viewport: VIEWPORTS[layout] })
     await context.addInitScript((value) => { try { window.localStorage.setItem('layout', value) } catch { /* storage off */ } }, layout)
     const page = await context.newPage()
+    await coverage.start(page)
     await page.goto(`${server.base}/web/`)
     return { context, page }
 }
@@ -90,6 +92,7 @@ async function close(server, { context, page }) {
     }).catch(() => [])
     const active = await page.evaluate(() => window.ApiClient && window.ApiClient.accessToken()).catch(() => null)
     for (const token of new Set([...tokens, active].filter(Boolean))) { await signOutToken(server, token) }
+    await coverage.save(page)
     await context.close()
 }
 

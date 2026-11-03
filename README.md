@@ -72,7 +72,7 @@ node --test "tests/switcher/*.test.js" # switcher script tests
 npm ci && npm run lint                 # ESLint on the switcher and its tests
 npm run test:browser                   # the switcher in a browser (needs Docker; see below)
 bash scripts/check-community-files.sh  # community files
-bash scripts/coverage.sh               # both test suites, with a coverage summary
+bash scripts/coverage.sh               # both test suites, with a coverage summary (--browser adds the browser tests)
 bash scripts/audit-packages.sh         # NuGet packages with known vulnerabilities
 ```
 
