@@ -70,12 +70,15 @@ You need the .NET 10 SDK, Node.js 22 or later with npm, and bash. The build runs
 dotnet test                            # builds the plugin and runs its tests
 node --test "tests/switcher/*.test.js" # switcher script tests
 npm ci && npm run lint                 # ESLint on the switcher and its tests
+npm run test:browser                   # the switcher in a browser (needs Docker; see below)
 bash scripts/check-community-files.sh  # community files
 bash scripts/coverage.sh               # both test suites, with a coverage summary
 bash scripts/audit-packages.sh         # NuGet packages with known vulnerabilities
 ```
 
 `bash scripts/smoke-test.sh` also needs Docker. It loads the plugin into a real Jellyfin server, on its own, alongside [File Transformation](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) and under a BaseUrl, and checks what the server reports and serves. CI runs it on every pull request; `--latest` runs it on the newest Jellyfin instead.
+
+`npm run test:browser` also needs Docker. It starts its own Jellyfin with the plugin built from your working tree, creates test accounts, and drives jellyfin-web in Chromium through the switcher's views in the desktop and TV layouts; the container is removed afterwards. Run `npx playwright-core install chromium` once, or set `QS_BROWSER_CHANNEL=chrome` to use an installed Google Chrome (as CI does).
 
 ## Questions, contributing and security
 
