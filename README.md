@@ -8,7 +8,7 @@ Quick Switch is a Jellyfin server plugin that adds fast switching between Jellyf
 
 ## Requirements
 
-- Jellyfin 12.0 or later. The build targets 12.2, and every change is tested on 12.2. The plugin is also checked each week against the newest Jellyfin release, so a new release is checked within about a week of coming out. If one breaks Quick Switch, a fix ships as a new version as soon as practical; this is an unofficial plugin maintained on a best-effort basis, so there is no deadline.
+- Jellyfin 12.2 or later. The plugin is built against 12.2, and older servers refuse it; every change is tested on 12.2. The plugin is also checked each week against the newest Jellyfin release, so a new release is checked within about a week of coming out. If one breaks Quick Switch, a fix ships as a new version as soon as practical; this is an unofficial plugin maintained on a best-effort basis, so there is no deadline.
 - No other plugins. Quick Switch adds its script to jellyfin-web as the page is served and never changes jellyfin-web's files. It also works alongside the [File Transformation](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) plugin, which other plugins use.
 - A client that loads jellyfin-web from your server; see [Compatibility](#compatibility).
 

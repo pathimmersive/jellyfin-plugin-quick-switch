@@ -9,6 +9,8 @@
 # --latest builds against the newest Jellyfin packages and runs every case on
 # the newest Jellyfin image, with the newest File Transformation build for it
 # (scripts/latest-versions.sh), instead of the pinned versions below.
+# The pinned image is the Jellyfin the plugin builds against, which is also the
+# oldest it loads on: its targetAbi is that version.
 #
 # Needs: bash, curl, docker, unzip, md5sum, the .NET 10 SDK, and Node.js for --latest.
 # Override the image with JELLYFIN_IMAGE=jellyfin/jellyfin:<tag>.
@@ -16,7 +18,9 @@ set -euo pipefail
 
 IMAGE="${JELLYFIN_IMAGE:-jellyfin/jellyfin:12.2.20261005-225228}"
 PLUGIN_NAME="Quick Switch"
-PLUGIN_VERSION="0.1.0.0"
+repo="$(cd "$(dirname "$0")/.." && pwd)"
+# The csproj holds the plugin's only version.
+PLUGIN_VERSION="$(grep -o '<Version>[^<]*' "$repo/src/Jellyfin.Plugin.QuickSwitch/Jellyfin.Plugin.QuickSwitch.csproj" | head -n 1 | sed 's/<Version>//')"
 PLUGIN_DIR="QuickSwitch_$PLUGIN_VERSION"
 ADMIN_USER="smoke"
 ADMIN_PW="smoke-$RANDOM$RANDOM"
@@ -32,8 +36,6 @@ FT_SERVER_VERSION="12.2.0"
 FT_URL="https://github.com/IAmParadox27/jellyfin-plugin-file-transformation/releases/download/$FT_VERSION/Release-$FT_SERVER_VERSION.zip"
 FT_MD5="76eae3b09a42dba7992820fa8f6a4584"
 JELLYFIN_VERSION=""
-
-repo="$(cd "$(dirname "$0")/.." && pwd)"
 
 case "${1:-}" in
     "") ;;
@@ -75,8 +77,10 @@ project="$repo/src/Jellyfin.Plugin.QuickSwitch/Jellyfin.Plugin.QuickSwitch.cspro
 plugin_dir="$work/plugins/$PLUGIN_DIR"
 dotnet publish "$project" -c Release -o "$plugin_dir" --nologo -v quiet ${JELLYFIN_VERSION:+"-p:JellyfinVersion=$JELLYFIN_VERSION"} >/dev/null     || fail "dotnet publish"
 [ -f "$plugin_dir/Jellyfin.Plugin.QuickSwitch.dll" ] || fail "plugin assembly missing from publish output"
-grep -q '"targetAbi": *"12.0.0.0"' "$plugin_dir/meta.json" || fail "meta.json does not declare targetAbi 12.0.0.0"
-pass "plugin built; meta.json declares targetAbi 12.0.0.0"
+# targetAbi is the Jellyfin the plugin was built against.
+built="${JELLYFIN_VERSION:-$(grep -o '<JellyfinVersion[^>]*>[^<]*' "$repo/Directory.Build.props" | head -n 1 | sed 's/.*>//')}"
+grep -q "\"targetAbi\": *\"$built.0\"" "$plugin_dir/meta.json" || fail "meta.json does not declare targetAbi $built.0"
+pass "plugin built; meta.json declares targetAbi $built.0"
 grep -q '"imagePath": *"icon.png"' "$plugin_dir/meta.json" && [ -s "$plugin_dir/icon.png" ] \
     || fail "the plugin folder does not carry icon.png named by meta.json's imagePath"
 pass "the plugin folder carries icon.png, named by meta.json's imagePath"

@@ -16,10 +16,13 @@ function load(window = {}) {
     return window
 }
 
-test('defines window.QuickSwitch with its version', () => {
-    const window = load()
+test('reports the version the server puts on its script URL, and holds none of its own', () => {
+    const served = load({ document: { currentScript: { src: 'http://server/jf/QuickSwitch/quick-switch.js?v=1.2.3.4' } } })
+    const bare = load()
 
-    assert.match(window.QuickSwitch.version, /^\d+\.\d+\.\d+$/)
+    assert.equal(served.QuickSwitch.version, '1.2.3.4')
+    assert.equal(bare.QuickSwitch.version, 'unknown')
+    assert.doesNotMatch(source, /['"]\d+\.\d+\.\d+(\.\d+)?['"]/, 'no version number in the script')
 })
 
 test('loading twice keeps the first instance', () => {

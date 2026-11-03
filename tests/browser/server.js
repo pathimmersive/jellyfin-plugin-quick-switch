@@ -35,7 +35,7 @@ async function startServer() {
         '-c', 'Release', '-o', pluginDir, '--nologo', '-v', 'quiet'], { stdio: ['ignore', 'ignore', 'inherit'] })
 
     const name = `quickswitch-browser-${process.pid}-${randomBytes(3).toString('hex')}`
-    const server = { name, work, base: null, accounts: {}, library: LIBRARY }
+    const server = { name, work, base: null, accounts: {}, library: LIBRARY, version: pluginVersion() }
     server.stop = () => {
         try { docker('rm', '-f', name) } catch { /* already gone */ }
         rmSync(work, { recursive: true, force: true })

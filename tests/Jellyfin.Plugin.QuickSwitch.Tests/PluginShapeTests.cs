@@ -68,7 +68,9 @@ public class PluginShapeTests
     {
         using var meta = JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "meta.json")));
 
-        Assert.Equal("12.0.0.0", meta.RootElement.GetProperty("targetAbi").GetString());
+        // The oldest server that loads the plugin is the Jellyfin it is built against.
+        var builtAgainst = typeof(MediaBrowser.Controller.IServerApplicationHost).Assembly.GetName().Version!.ToString();
+        Assert.Equal(builtAgainst, meta.RootElement.GetProperty("targetAbi").GetString());
         Assert.Equal(Plugin.PluginId, meta.RootElement.GetProperty("guid").GetString());
     }
 }

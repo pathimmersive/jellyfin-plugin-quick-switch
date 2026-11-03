@@ -1,9 +1,12 @@
 using System;
 using System.IO;
 using System.IO.Compression;
+using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
 using Jellyfin.Plugin.QuickSwitch.Integration;
+using MediaBrowser.Common.Net;
+using MediaBrowser.Controller.Configuration;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -53,7 +56,7 @@ public class IndexPageMiddlewareTests
         return HttpMethods.IsHead(request.Method) ? Task.CompletedTask : response.Body.WriteAsync(bytes).AsTask();
     }
 
-    private static async Task<(HttpContext Context, string Body)> Serve(string path, string method = "GET", Action<HttpRequest>? setUp = null, RequestDelegate? next = null, string page = Index, Func<string, string?>? change = null)
+    private static async Task<(HttpContext Context, string Body)> Serve(string path, string method = "GET", Action<HttpRequest>? setUp = null, RequestDelegate? next = null, string page = Index, Func<string, string?>? change = null, string baseUrl = "")
     {
         var context = new DefaultHttpContext();
         context.Request.Method = method;
@@ -62,19 +65,21 @@ public class IndexPageMiddlewareTests
         var body = new MemoryStream();
         context.Response.Body = body;
 
-        await new IndexPageMiddleware(next ?? (c => StaticFiles(c, page)), NullLogger<IndexPageMiddleware>.Instance, change ?? WebPatches.PatchIndex).InvokeAsync(context);
+        await new IndexPageMiddleware(next ?? (c => StaticFiles(c, page)), NullLogger<IndexPageMiddleware>.Instance, change ?? WebPatches.PatchIndex, () => baseUrl).InvokeAsync(context);
 
         return (context, Encoding.UTF8.GetString(body.ToArray()));
     }
 
     [Theory]
-    [InlineData("/web/index.html")]
-    [InlineData("/web/")]
-    [InlineData("/jf/web/index.html")]
-    [InlineData("/jf/web/")]
-    public async Task TheIndexPageGetsTheTagUnderAnyBaseUrl(string path)
+    [InlineData("/web/index.html", "")]
+    [InlineData("/web/", "")]
+    [InlineData("/web", "")]
+    [InlineData("/jf/web/index.html", "/jf")]
+    [InlineData("/jf/web/", "/jf")]
+    [InlineData("/JF/Web", "jf/")]
+    public async Task TheIndexPageGetsTheTagUnderItsBaseUrl(string path, string baseUrl)
     {
-        var (context, body) = await Serve(path);
+        var (context, body) = await Serve(path, baseUrl: baseUrl);
 
         Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
         Assert.Equal(Index.Replace("</head>", Tag + "</head>", StringComparison.Ordinal), body);
@@ -93,6 +98,36 @@ public class IndexPageMiddlewareTests
         Assert.Equal(StockTag, context.Response.Headers.ETag.ToString());
         Assert.Equal("gzip", context.Response.Headers.ContentEncoding.ToString());
         Assert.DoesNotContain(Tag, body);
+    }
+
+    [Theory]
+    [InlineData("/Persons/web", "")]
+    [InlineData("/Genres/web/", "")]
+    [InlineData("/jf/Items/web", "/jf")]
+    [InlineData("/web/", "/jf")]
+    [InlineData("/jf/web/", "")]
+    public async Task APathThatOnlyEndsInWebIsNotTheIndexPage(string path, string baseUrl)
+    {
+        // The answer is HTML with a head, so only the path keeps it unchanged.
+        var (context, body) = await Serve(path, baseUrl: baseUrl);
+
+        Assert.Equal(StockTag, context.Response.Headers.ETag.ToString());
+        Assert.Equal(Index, body);
+    }
+
+    [Fact]
+    public async Task AnAnswerThatIsNotHtmlAtTheIndexPathIsPassedOnAsItCame()
+    {
+        const string Json = "{\"note\":\"</head>\"}";
+        var (context, body) = await Serve("/web/", next: async c =>
+        {
+            c.Response.ContentType = "application/json";
+            c.Response.Headers.ETag = StockTag;
+            await c.Response.Body.WriteAsync(Encoding.UTF8.GetBytes(Json));
+        });
+
+        Assert.Equal(StockTag, context.Response.Headers.ETag.ToString());
+        Assert.Equal(Json, body);
     }
 
     [Fact]
@@ -196,7 +231,7 @@ public class IndexPageMiddlewareTests
     [Fact]
     public async Task TheStartupFilterPutsTheMiddlewareAheadOfTheRestOfThePipeline()
     {
-        var app = new ApplicationBuilder(new ServiceCollection().AddLogging().BuildServiceProvider());
+        var app = new ApplicationBuilder(new ServiceCollection().AddLogging().AddSingleton(Configuration.WithBaseUrl(string.Empty)).BuildServiceProvider());
 
         // The rest of Jellyfin's pipeline, here just the static files, is added after the filter's middleware.
         new IndexPageStartupFilter(NullLogger<IndexPageStartupFilter>.Instance)
@@ -220,5 +255,28 @@ public class IndexPageMiddlewareTests
         new PluginServiceRegistrator().RegisterServices(services, null!);
 
         Assert.Contains(services, d => d.ServiceType == typeof(IStartupFilter) && d.ImplementationType == typeof(IndexPageStartupFilter));
+    }
+
+    // Stands in for Jellyfin's configuration manager: answers only the network configuration.
+    public class Configuration : DispatchProxy
+    {
+        private string _baseUrl = string.Empty;
+
+        public static IServerConfigurationManager WithBaseUrl(string baseUrl)
+        {
+            var manager = Create<IServerConfigurationManager, Configuration>();
+            ((Configuration)(object)manager)._baseUrl = baseUrl;
+            return manager;
+        }
+
+        protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
+        {
+            if (targetMethod?.Name == "GetConfiguration" && args?[0] as string == "network")
+            {
+                return new NetworkConfiguration { BaseUrl = _baseUrl };
+            }
+
+            throw new NotSupportedException(targetMethod?.Name);
+        }
     }
 }

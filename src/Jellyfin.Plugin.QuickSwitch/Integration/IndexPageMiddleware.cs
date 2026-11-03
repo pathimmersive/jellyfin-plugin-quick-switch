@@ -4,6 +4,8 @@ using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
+using MediaBrowser.Common.Net;
+using MediaBrowser.Controller.Configuration;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Net.Http.Headers;
@@ -19,36 +21,47 @@ public sealed partial class IndexPageMiddleware
     private readonly RequestDelegate _next;
     private readonly ILogger<IndexPageMiddleware> _logger;
     private readonly Func<string, string?> _change;
+    private readonly Func<string?> _baseUrl;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="IndexPageMiddleware"/> class.
     /// </summary>
     /// <param name="next">The rest of the pipeline.</param>
     /// <param name="logger">The logger.</param>
-    public IndexPageMiddleware(RequestDelegate next, ILogger<IndexPageMiddleware> logger)
-        : this(next, logger, WebPatches.PatchIndex)
+    /// <param name="configuration">The server configuration, for its BaseUrl.</param>
+    public IndexPageMiddleware(RequestDelegate next, ILogger<IndexPageMiddleware> logger, IServerConfigurationManager configuration)
+        : this(next, logger, WebPatches.PatchIndex, () => configuration.GetNetworkConfiguration().BaseUrl)
     {
     }
 
-    // The change is a parameter so the tests can make it fail.
-    internal IndexPageMiddleware(RequestDelegate next, ILogger<IndexPageMiddleware> logger, Func<string, string?> change)
+    // The change and the BaseUrl are parameters so the tests can set them.
+    internal IndexPageMiddleware(RequestDelegate next, ILogger<IndexPageMiddleware> logger, Func<string, string?> change, Func<string?> baseUrl)
     {
         _next = next;
         _logger = logger;
         _change = change;
+        _baseUrl = baseUrl;
     }
 
     /// <summary>
-    /// Gets a value indicating whether a path is jellyfin-web's index page, under any BaseUrl.
+    /// Gets a value indicating whether a whole request path is jellyfin-web's index page
+    /// under the configured BaseUrl: exactly {BaseUrl}/web, {BaseUrl}/web/ or {BaseUrl}/web/index.html.
     /// </summary>
-    /// <param name="path">The request path.</param>
+    /// <param name="path">The whole request path, its PathBase included.</param>
+    /// <param name="baseUrl">The server's BaseUrl, empty or null for none.</param>
     /// <returns>Whether the page is changed on its way out.</returns>
-    public static bool IsIndexPage(PathString path)
+    public static bool IsIndexPage(PathString path, string? baseUrl)
     {
+        var root = (baseUrl ?? string.Empty).Trim().TrimEnd('/');
+        if (root.Length > 0 && root[0] != '/')
+        {
+            root = "/" + root;
+        }
+
         var value = path.Value ?? string.Empty;
-        return value.EndsWith("/web/index.html", StringComparison.OrdinalIgnoreCase)
-            || value.EndsWith("/web/", StringComparison.OrdinalIgnoreCase)
-            || value.EndsWith("/web", StringComparison.OrdinalIgnoreCase);
+        return string.Equals(value, root + "/web", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(value, root + "/web/", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(value, root + "/web/index.html", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -60,7 +73,7 @@ public sealed partial class IndexPageMiddleware
     {
         var request = context.Request;
         var head = HttpMethods.IsHead(request.Method);
-        if (!(head || HttpMethods.IsGet(request.Method)) || !IsIndexPage(request.Path))
+        if (!(head || HttpMethods.IsGet(request.Method)) || !IsIndexPage(request.PathBase.Add(request.Path), _baseUrl()))
         {
             await _next(context).ConfigureAwait(false);
             return;
@@ -103,7 +116,9 @@ public sealed partial class IndexPageMiddleware
         }
 
         var page = stock;
-        if (response.StatusCode == StatusCodes.Status200OK && !response.Headers.ContainsKey(HeaderNames.ContentEncoding))
+        // Only an HTML page is changed; anything else at that path goes on as it came.
+        var html = response.ContentType?.StartsWith("text/html", StringComparison.OrdinalIgnoreCase) == true;
+        if (response.StatusCode == StatusCodes.Status200OK && html && !response.Headers.ContainsKey(HeaderNames.ContentEncoding))
         {
             page = Change(stock);
             response.Headers.Remove(HeaderNames.LastModified);

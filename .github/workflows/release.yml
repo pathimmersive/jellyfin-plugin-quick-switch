@@ -21,11 +21,22 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+      # Reads ci.yml's runs for the tagged commit.
+      actions: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The whole history, to check the tagged commit is on main.
+          fetch-depth: 0
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: 10.0.x
+      # Stops a release unless the tagged commit is on main, passed CI there, and is the csproj version.
+      - name: Check the tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: bash scripts/check-release-tag.sh "$TAG"
       # Stops a release while the README still says it is in preparation.
       - name: Check the community files for a release
         run: bash scripts/check-community-files.sh --release
