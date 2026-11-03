@@ -5,7 +5,14 @@
 (function () {
     'use strict';
 
-    var VERSION = '0.1.0';
+    // The plugin's version, from the ?v= the server puts on this script's URL.
+    var VERSION = scriptVersion();
+
+    function scriptVersion() {
+        var src = typeof document !== 'undefined' && document.currentScript ? document.currentScript.src : '';
+        var match = /[?&]v=([^&#]+)/.exec(src || '');
+        return match ? decodeURIComponent(match[1]) : 'unknown';
+    }
 
     if (window.QuickSwitch) {
         return;
@@ -517,7 +524,7 @@
     // the same version, so they work under any BaseUrl and are cached alike.
     var STYLESHEET = typeof document !== 'undefined' && document.currentScript && document.currentScript.src
         ? document.currentScript.src.replace(/quick-switch\.js(\?|$)/, 'quick-switch.css$1')
-        : '../QuickSwitch/quick-switch.css?v=' + VERSION;
+        : '../QuickSwitch/quick-switch.css';
 
     function addStyles() {
         if (document.getElementById('quickswitch-style')) {

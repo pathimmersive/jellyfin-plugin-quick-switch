@@ -32,6 +32,7 @@ for (const layout of ['desktop', 'tv']) {
             const marker = await mark(page)
             const o = await open(page)
             assert.ok(o.shown, 'window.QuickSwitch.open() shows the switcher')
+            assert.equal(await page.evaluate(() => window.QuickSwitch.version), server.version, 'the switcher reports the plugin version the server loaded it with')
             assert.deepEqual([o.heading, o.sub], ['Who’s watching?', 'Select or add an account'])
             assert.deepEqual(o.tiles.map((t) => t.id), [sam.id, alex.id], 'one tile per account, in the order they were saved')
             const a = o.tiles[1]

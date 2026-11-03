@@ -192,7 +192,8 @@ async Task<List<JsonObject>> ReadGitHubEntries()
 
         foreach (var release in releases)
         {
-            if (release!["draft"]?.GetValue<bool>() == true)
+            // Only published releases: a draft or a GitHub pre-release would reach every server using the repository.
+            if (release!["draft"]?.GetValue<bool>() == true || release["prerelease"]?.GetValue<bool>() == true)
             {
                 continue;
             }

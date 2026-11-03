@@ -7,8 +7,9 @@
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <!-- The plugin ABI the build declares; Jellyfin refuses to load a plugin whose targetAbi is newer than the server. -->
-    <JellyfinTargetAbi>12.0.0.0</JellyfinTargetAbi>
+    <!-- The plugin ABI the build declares: the Jellyfin it builds against, the oldest server that loads it.
+         Jellyfin refuses a plugin whose targetAbi is newer than the server, and an older server reports a newer build NotSupported. -->
+    <JellyfinTargetAbi>$(JellyfinVersion).0</JellyfinTargetAbi>
   </PropertyGroup>
 
   <ItemGroup>

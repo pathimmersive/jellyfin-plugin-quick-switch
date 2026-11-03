@@ -37,6 +37,8 @@ jobs:
           npm ci --no-audit --no-fund
           npm run lint
       - run: bash scripts/check-community-files.sh
+      - name: Test the release manifest
+        run: node --test "tests/release/*.test.js"
       - name: Audit NuGet packages for known vulnerabilities
         run: bash scripts/audit-packages.sh
 
