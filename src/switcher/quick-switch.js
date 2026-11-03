@@ -12,6 +12,10 @@
     }
 
     var STORE_KEY = 'quickswitch';
+    var STORE_VERSION = 1;
+    var UNREADABLE_KEY = 'quickswitch-unreadable';
+    // The fields of a saved account this build manages; any others, from a newer build, are kept.
+    var ACCOUNT_FIELDS = ['UserId', 'Name', 'AccessToken', 'PrimaryImageTag', 'Addresses', 'Stale'];
     var ACCENT = '#00a4dc';
     // Avatar colours for accounts without a profile picture; white text passes 3:1 on each at tile size.
     var COLORS = ['#0081b0', '#8e44ad', '#c0561b', '#1f8a4c', '#b03a6b', '#5a6acf', '#8a6d00', '#00796b'];
@@ -75,16 +79,29 @@
     // Store -------------------------------------------------------------------
 
     // Saved accounts, per server, in this browser's localStorage. Only accounts
-    // that signed in on this device are ever saved.
+    // that signed in on this device are ever saved. The format is private and
+    // versioned: a store without a version is version 1, and a newer build's
+    // version and fields are kept when this one writes, so going back to an
+    // older build loses nothing.
 
     function readStore() {
+        var raw = null;
         var value;
         try {
-            value = JSON.parse(window.localStorage.getItem(STORE_KEY) || '{}');
+            raw = window.localStorage.getItem(STORE_KEY);
+            value = JSON.parse(raw || '{}');
         } catch (e) {
-            value = {};
+            value = null;
         }
-        if (!value || typeof value !== 'object') {
+        if (!value || typeof value !== 'object' || value instanceof Array) {
+            if (raw) {
+                // Kept aside before starting afresh, so its saved sign-ins can still be found.
+                try {
+                    window.localStorage.setItem(UNREADABLE_KEY, raw);
+                } catch (e) {
+                    // Storage full or blocked: nothing more can be kept.
+                }
+            }
             value = {};
         }
         if (!value.servers || typeof value.servers !== 'object') {
@@ -94,6 +111,9 @@
     }
 
     function writeStore(value) {
+        if (!(typeof value.v === 'number' && value.v > STORE_VERSION)) {
+            value.v = STORE_VERSION;
+        }
         try {
             window.localStorage.setItem(STORE_KEY, JSON.stringify(value));
         } catch (e) {
@@ -136,6 +156,13 @@
             PrimaryImageTag: account.PrimaryImageTag || null
         };
         var at = indexOf(accounts, account.UserId);
+        if (at !== -1) {
+            for (var field in accounts[at]) {
+                if (Object.prototype.hasOwnProperty.call(accounts[at], field) && ACCOUNT_FIELDS.indexOf(field) === -1) {
+                    entry[field] = accounts[at][field];
+                }
+            }
+        }
         var addresses = at !== -1 && accounts[at].Addresses instanceof Array ? accounts[at].Addresses.slice() : [];
         var address = addressKey(account.Address);
         if (address && addresses.indexOf(address) === -1) {
@@ -2280,13 +2307,20 @@
         addEntries();
     }
 
+    // The switcher's only public surface.
     window.QuickSwitch = {
         version: VERSION,
         open: open,
-        close: close,
-        store: { list: list, save: save, forget: forget, move: move, markStale: markStale, startAdding: startAdding, addingFrom: addingFrom, stopAdding: stopAdding },
-        avatar: avatar
+        close: close
     };
+
+    // The unit tests provide this object before the script runs to reach its
+    // internals; jellyfin-web never does, so no page script is handed them.
+    var hook = window.QuickSwitchTestHook;
+    if (hook && typeof hook === 'object') {
+        hook.store = { list: list, save: save, forget: forget, move: move, markStale: markStale, startAdding: startAdding, addingFrom: addingFrom, stopAdding: stopAdding };
+        hook.avatar = avatar;
+    }
 
     if (typeof window.setInterval === 'function') {
         window.setInterval(watch, 1000);
