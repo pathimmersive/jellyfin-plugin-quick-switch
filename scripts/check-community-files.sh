@@ -5,10 +5,19 @@
 # for unreleased changes or a version. Also checks that new Jellyfin releases
 # are followed: Dependabot, the weekly canary, and the docs that describe them.
 #
-# Usage: scripts/check-community-files.sh
+# Usage: scripts/check-community-files.sh [--release]
+#
+# --release also fails while the README still says the first release is in
+# preparation; the Release workflow runs it on every version tag.
 #
 # Exits non-zero listing everything missing.
 set -euo pipefail
+
+case "${1:-}" in
+    "") release=0 ;;
+    --release) release=1 ;;
+    *) echo "usage: $0 [--release]" >&2; exit 2 ;;
+esac
 
 repo="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$repo"
@@ -96,6 +105,14 @@ if grep -q 'acknowledged within 7 days' SECURITY.md 2>/dev/null; then
     pass "SECURITY.md says how soon a report is acknowledged"
 else
     fail "SECURITY.md does not say how soon a report is acknowledged"
+fi
+
+if [ "$release" -eq 1 ]; then
+    if grep -q 'first release is in preparation' README.md 2>/dev/null; then
+        fail "README.md still says the first release is in preparation"
+    else
+        pass "README.md does not say the first release is in preparation"
+    fi
 fi
 
 if [ "$missing" -gt 0 ]; then

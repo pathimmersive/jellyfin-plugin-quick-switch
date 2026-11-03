@@ -1,6 +1,6 @@
 # Contributing to Quick Switch
 
-Thanks for your interest. Quick Switch is in early development, so please open an issue or start a discussion about a change before starting on a pull request.
+Thanks for your interest. Quick Switch is maintained on a best-effort basis, so for anything larger than a small fix, please open an issue or start a discussion before starting on a pull request.
 
 ## Asking, suggesting and reporting
 
@@ -33,7 +33,7 @@ Jellyfin, jellyfin-web and File Transformation change on their own schedules, so
 
 Releases are cut by a maintainer, and only when there is something worth shipping. Nothing is released from `main` automatically.
 
-1. Set `<Version>` in `src/Jellyfin.Plugin.QuickSwitch/Jellyfin.Plugin.QuickSwitch.csproj` and `PLUGIN_VERSION` in `scripts/smoke-test.sh` to the new version, rename **Unreleased** in `CHANGELOG.md` to the version and date (for example `## [0.2.0.0] - 2026-12-01`) with a new empty **Unreleased** above it, and merge that change.
+1. Set `<Version>` in `src/Jellyfin.Plugin.QuickSwitch/Jellyfin.Plugin.QuickSwitch.csproj` and `PLUGIN_VERSION` in `scripts/smoke-test.sh` to the new version, rename **Unreleased** in `CHANGELOG.md` to the version and date (for example `## [0.2.0.0] - 2026-12-01`) with a new empty **Unreleased** above it, and merge that change. For the first release, the same change removes the line in the README's Installing section that says the first release is in preparation; the Release workflow stops while it is there.
 2. Tag the merge commit with the same version, for example `git tag -a v0.2.0.0 -m "Quick Switch 0.2.0.0"`, and push the tag.
 3. The Release workflow takes that version's `CHANGELOG.md` section as the release notes and the manifest's changelog, and stops if there is none. It packages the plugin, checks nothing is published under that tag yet, and publishes the zip with its manifest entry. The Pages workflow then rebuilds `manifest.json` from every release.
 
