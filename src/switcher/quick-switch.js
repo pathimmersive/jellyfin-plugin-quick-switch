@@ -2318,12 +2318,15 @@
         }
     }
 
+    // The red button is the switcher's only while it is open, or when it opens
+    // it; anywhere else it is left to jellyfin-web and other scripts.
     function onRedButton(event) {
-        if (event.keyCode !== KEY.red) {
+        if (event.keyCode !== KEY.red || (!overlay && !signedIn())) {
             return;
         }
         event.preventDefault();
-        if (!overlay && signedIn()) {
+        event.stopPropagation();
+        if (!overlay) {
             open();
         }
     }

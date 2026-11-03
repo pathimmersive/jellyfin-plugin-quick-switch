@@ -163,6 +163,42 @@ const pressRed = (page) => page.evaluate(() => {
     target.dispatchEvent(new KeyboardEvent('keydown', { keyCode: 403, which: 403, bubbles: true, cancelable: true }))
 })
 
+// Presses red and reports whether the switcher took it, and whether a listener
+// on the page behind the switcher still received it.
+const redReaches = (page) => page.evaluate(() => {
+    let behind = false
+    const listen = () => { behind = true }
+    document.addEventListener('keydown', listen)
+    const target = document.activeElement || document.body
+    const event = new KeyboardEvent('keydown', { keyCode: 403, which: 403, bubbles: true, cancelable: true })
+    target.dispatchEvent(event)
+    document.removeEventListener('keydown', listen)
+    return { prevented: event.defaultPrevented, behind }
+})
+
+test('red: the red button is left to the page unless it opens the switcher, and goes no further while it is open (tv)', async () => {
+    const { sam } = server.accounts
+    const run = await newPage(browser, server, 'tv')
+    const { page } = run
+    try {
+        await page.locator('#txtManualName, .btnManual').first().waitFor({ timeout: 30000 })
+        const signInPage = await redReaches(page)
+        assert.deepEqual(signInPage, { prevented: false, behind: true }, 'on the sign-in page, red reaches the page untouched')
+        assert.ok(!(await overlay(page)).shown, 'and opens nothing')
+
+        await signIn(page, sam)
+        await page.waitForTimeout(1500)
+        const home = await redReaches(page)
+        assert.deepEqual(home, { prevented: true, behind: false }, 'signed in, red opens the switcher and is taken by it')
+        assert.ok((await waitFor(() => overlay(page), (o) => o.shown, 3000)).ok, 'the switcher is open')
+
+        const whileOpen = await redReaches(page)
+        assert.deepEqual(whileOpen, { prevented: true, behind: false }, 'with the switcher open, red goes no further')
+    } finally {
+        await close(server, run)
+    }
+})
+
 async function goHome(page) {
     await page.evaluate(() => { location.hash = '#/home' })
     await page.waitForFunction(() => document.querySelector('#indexPage:not(.hide)'), null, { timeout: 10000 })
