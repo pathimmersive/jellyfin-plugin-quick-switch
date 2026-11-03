@@ -26,6 +26,9 @@ jobs:
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: 10.0.x
+      # Stops a release while the README still says it is in preparation.
+      - name: Check the community files for a release
+        run: bash scripts/check-community-files.sh --release
       - name: Package
         env:
           TAG: ${{ github.ref_name }}

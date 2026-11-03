@@ -15,7 +15,7 @@ Include what is affected, the Jellyfin server version, the Quick Switch version 
 
 ## Supported versions
 
-Quick Switch has no release yet. Fixes go into `main`; once releases exist, the latest release is supported.
+The latest release is supported. Fixes go into `main` and ship as a new version; earlier versions are not patched.
 
 ## Scope
 
