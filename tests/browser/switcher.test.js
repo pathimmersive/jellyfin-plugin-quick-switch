@@ -163,6 +163,21 @@ const pressRed = (page) => page.evaluate(() => {
     target.dispatchEvent(new KeyboardEvent('keydown', { keyCode: 403, which: 403, bubbles: true, cancelable: true }))
 })
 
+test('entry: jellyfin-web’s legacy desktop layout gets the Switch Account row on the page its header button opens', async () => {
+    await withAccounts('desktop-legacy', async (page) => {
+        const button = page.locator('.skinHeader .headerUserButton')
+        await button.waitFor({ state: 'visible', timeout: 15000 })
+        await button.click()
+        const row = page.locator('#myPreferencesMenuPage:not(.hide) .userSection [data-qs-entry="settings"]')
+        await row.waitFor({ timeout: 5000 })
+        assert.equal((await row.textContent()).trim().startsWith('Switch Account'), true, 'the User section has Switch Account')
+        await row.click()
+        const opened = await waitFor(() => overlay(page), (o) => o.shown, 3000)
+        assert.ok(opened.ok && opened.value.tiles.length === 2, 'selecting it opens Who’s watching?')
+        await closeSwitcher(page)
+    })
+})
+
 // Presses red and reports whether the switcher took it, and whether a listener
 // on the page behind the switcher still received it.
 const redReaches = (page) => page.evaluate(() => {

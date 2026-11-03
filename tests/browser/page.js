@@ -10,7 +10,7 @@ function launch() {
     return chromium.launch({ headless: !process.env.QS_HEADED, ...(channel ? { channel } : {}) })
 }
 
-const VIEWPORTS = { tv: { width: 1280, height: 720 }, desktop: { width: 1280, height: 800 } }
+const VIEWPORTS = { tv: { width: 1280, height: 720 }, desktop: { width: 1280, height: 800 }, 'desktop-legacy': { width: 1280, height: 800 } }
 
 async function waitFor(fn, test, timeout) {
     const until = Date.now() + timeout

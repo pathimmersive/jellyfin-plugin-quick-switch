@@ -2272,10 +2272,18 @@
 
     // The TV settings page row copies Sign Out's markup and goes first in the
     // User section.
+    // jellyfin-web's legacy app (the TV layout, and the legacy desktop and
+    // mobile layouts) has no User Menu: its header button opens the settings
+    // page. The modern layouts keep that header in the page but never show it.
+    function legacyHeader() {
+        var button = document.querySelector('.skinHeader .headerUserButton');
+        return !!button && button.offsetWidth > 0;
+    }
+
     function addSettingsRow() {
         var page = document.getElementById('myPreferencesMenuPage');
         var section = page && page.querySelector('.userSection');
-        if (!section || !isTv()) {
+        if (!section || !(isTv() || legacyHeader())) {
             return;
         }
         var row = section.querySelector('[data-qs-entry]');
