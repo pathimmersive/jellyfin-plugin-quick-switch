@@ -16,8 +16,6 @@ Unlike profile plugins, which add profiles or PINs inside the server, Quick Swit
 
 ## Installing
 
-**The first release is in preparation.** Until it is out, the repository below has nothing to install.
-
 1. In Jellyfin, open **Dashboard → Plugins → Repositories** and add a repository named Quick Switch with this URL:
 
    ```text
