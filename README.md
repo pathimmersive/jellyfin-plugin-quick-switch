@@ -4,6 +4,8 @@ Quick Switch is a Jellyfin server plugin that adds fast switching between Jellyf
 
 **Quick Switch is an unofficial, third-party plugin.** It is not made, endorsed or supported by the Jellyfin project, and it does not use the Jellyfin logo.
 
+Unlike profile plugins, which add profiles or PINs inside the server, Quick Switch switches between real Jellyfin accounts: each keeps its own libraries, watch history and parental controls, nothing is stored on the server, and no other plugin is needed.
+
 ![The Quick Switch "Who's watching?" screen in jellyfin-web's TV layout: four saved accounts, Robin, Sam, Jordan and Alex, as round tiles, with Alex marked "Watching now", an Add Account tile, a Manage Accounts button, and remote hints for OK, Back and the red button.](images/screenshot.png)
 
 ## Requirements
@@ -42,13 +44,18 @@ Everything works with a TV remote (arrows, OK, Back) as well as mouse, touch and
 
 ## Security model
 
-Quick Switch saves each account's Jellyfin access token on the device, in the same browser storage where jellyfin-web already keeps the signed-in account's token. **Anyone using that device can switch to any account saved on it, without a password.** That is the intended behaviour; only save accounts on devices whose users you trust with them. A saved account is only used at the server addresses it has signed in through on that device; at a new address, such as a different host name for the same server, it asks for its password once.
+Quick Switch saves each account's Jellyfin access token on the device, in the same browser storage where jellyfin-web already keeps the signed-in account's token. **Anyone using that device can switch to any account saved on it, without a password.** That is the intended behaviour; only save accounts on devices whose users you trust with them. A saved sign-in is a bearer token: someone who can read the device's browser storage, for example with a desktop browser's developer tools, can copy it off the device and use it elsewhere, and it works until it is signed out. A saved account is only used at the server addresses it has signed in through on that device; at a new address, such as a different host name for the same server, it asks for its password once.
 
-A saved account stops working, and asks for its password again, when its password is changed, its device is deleted in **Dashboard → Devices**, or the account is disabled. Removing an account in **Manage Accounts** signs it out on the server for that device and leaves the other accounts signed in. At a server address the account wasn't saved at, Quick Switch can't sign it out there; it says so, and removing it then only forgets it on that device. Jellyfin's own **Sign Out** signs out only the account signed in now, and takes it off that device's switcher; the others stay saved until they are removed.
+A saved account stops working, and asks for its password again, when its user changes the password from another device, its device is deleted in **Dashboard → Devices**, or the account is disabled. A saved sign-in keeps working when an administrator resets the password, when the password is changed in LDAP, or when it changes at a single sign-on provider; to end it, remove the account in **Manage Accounts** or delete the device. An account that signs in only through single sign-on has no Jellyfin password, so it can't use the password form that **Sign in again** opens; sign it in again the way it usually signs in. Removing an account in **Manage Accounts** signs it out on the server for that device and leaves the other accounts signed in. At a server address the account wasn't saved at, Quick Switch can't sign it out there; it says so, and removing it then only forgets it on that device. Jellyfin's own **Sign Out** signs out only the account signed in now, and takes it off that device's switcher; the others stay saved until they are removed.
 
 - **Administrator accounts:** saving one on a shared device gives everyone who uses that device the server's Dashboard. Quick Switch asks before it saves an account that manages the server, including a saved account that is later made an administrator, and **Don't save** is the default; keep it on devices other people use. Nothing in the switcher marks which saved account is an administrator.
+- **Parental controls:** they belong to each account, so they don't hold between the accounts saved on one device. Anyone there can switch to any saved account, including one without restrictions; don't save unrestricted accounts on a device children use.
 - **HTTPS:** reach your server over HTTPS, so access tokens never cross the network in clear.
 - **Other plugins and custom JavaScript:** anything else that runs inside jellyfin-web on your server can read the accounts saved on a device, just as it can read the signed-in one. Only install plugins you trust.
+
+## Removing Quick Switch
+
+Uninstall it in **Dashboard → Plugins** and restart the server; jellyfin-web is then served without the switcher. The sign-ins it saved stay in each device's browser storage, and stay valid on the server, until they are signed out. To end them, remove the saved accounts in **Manage Accounts** on each device before uninstalling, or afterwards delete each device in **Dashboard → Devices**, which signs out every account saved on it at once.
 
 ## Troubleshooting
 
@@ -60,7 +67,9 @@ A saved account stops working, and asks for its password again, when its passwor
 
 ## Compatibility
 
-Quick Switch runs in clients that load jellyfin-web from your server: web browsers, the LG webOS app, the official Android and iOS apps, and Jellyfin Desktop. It is tested in web browsers and the LG webOS app. It cannot run in clients that bundle their own copy of jellyfin-web, such as the Samsung Tizen store app, or in native clients such as Android TV, Roku, Swiftfin and Infuse. The Android TV app already switches between users who have signed in on it.
+Quick Switch runs in clients that load jellyfin-web from your server. It is tested on Jellyfin 12.2 in web browsers, in jellyfin-web's desktop, mobile, TV and legacy layouts, and in the LG webOS app, and checked each week on the newest Jellyfin. The official Android and iOS apps and Jellyfin Desktop load jellyfin-web from the server too, so it is expected to work, but untested there. It cannot run in clients that bundle their own copy of jellyfin-web, such as the Samsung Tizen store app; in native clients such as Android TV, Roku, Swiftfin, Infuse, Findroid, Streamyfin and Kodi; or where a separate web server hosts jellyfin-web itself rather than your Jellyfin server. The Android TV app already switches between users who have signed in on it.
+
+The switcher runs inside jellyfin-web and depends on jellyfin-web's internals, which any Jellyfin release can change. The weekly check against the newest Jellyfin is there to catch that; until a fixed Quick Switch is out, a Jellyfin update can stop the switcher working, while jellyfin-web itself keeps working.
 
 ## Building and testing
 
