@@ -316,7 +316,7 @@ test('saves whoever signs in once the server confirms who they are', () => {
     assert.equal(sent[0].headers.Authorization,
         'MediaBrowser Client="Jellyfin Web", Device="TV", DeviceId="device-1", Version="10.11.0", Token="t1"')
     sent[0].answer(200, { Id: 'a', Name: 'Al', PrimaryImageTag: 'img' })
-    assert.deepEqual(store.list('s'), [{ UserId: 'a', Name: 'Al', AccessToken: 't1', PrimaryImageTag: 'img', Addresses: ['http://server/jf'] }])
+    assert.deepEqual(store.list('s'), [{ UserId: 'a', Name: 'Al', AccessToken: 't1', PrimaryImageTag: 'img', Admin: false, Addresses: ['http://server/jf'] }])
 })
 
 test('asks the server only when the signed-in account or its token changes', () => {
@@ -406,15 +406,52 @@ test('an account that is not an administrator is saved without asking', () => {
     assert.equal(store.list('s').length, 1)
 })
 
-test('an administrator already saved keeps its place when it signs in again', () => {
+test('an administrator saved as one keeps its place when it signs in again', () => {
     const signedIn = { serverId: 's', userId: 'a', token: 't1' }
     const { tick, sent, store } = watching(signedIn)
-    store.save('s', { UserId: 'a', Name: 'Al', AccessToken: 't0' })
+    store.save('s', { UserId: 'a', Name: 'Al', AccessToken: 't0', Admin: true })
 
     tick()
     sent[0].answer(200, { Id: 'a', Name: 'Al', Policy: { IsAdministrator: true } })
 
-    assert.equal(store.list('s')[0].AccessToken, 't1')
+    assert.deepEqual(store.list('s').map((a) => [a.AccessToken, a.Admin]), [['t1', true]])
+})
+
+test('a saved account made an administrator since is not kept as one without asking', () => {
+    const signedIn = { serverId: 's', userId: 'a', token: 't1' }
+    const { tick, sent, store } = watching(signedIn)
+    store.save('s', { UserId: 'a', Name: 'Al', AccessToken: 't0', Admin: false })
+
+    tick()
+    sent[0].answer(200, { Id: 'a', Name: 'Al', Policy: { IsAdministrator: true } })
+
+    assert.deepEqual(store.list('s').map((a) => [a.AccessToken, a.Admin]), [['t0', false]])
+})
+
+test('a sign-in with Remember me unticked is not saved, and a copy saved before is forgotten', () => {
+    const storage = memoryStorage()
+    storage.setItem('enableAutoLogin', 'false')
+    const signedIn = { serverId: 's', userId: 'b', token: 't2' }
+    const { tick, sent, store } = watching(signedIn, undefined, storage)
+    store.save('s', { UserId: 'b', Name: 'Bo', AccessToken: 't1', Address: 'http://server/jf/' })
+    store.save('s', { UserId: 'c', Name: 'Cy', AccessToken: 'tc', Address: 'http://server/jf/' })
+
+    tick()
+    sent[0].answer(200, { Id: 'b', Name: 'Bo' })
+
+    assert.deepEqual(store.list('s').map((a) => a.UserId), ['c'])
+    assert.equal(sent.filter((x) => x.method === 'POST').length, 0)
+})
+
+test('a sign-in with Remember me ticked is saved', () => {
+    const storage = memoryStorage()
+    storage.setItem('enableAutoLogin', 'true')
+    const { tick, sent, store } = watching({ serverId: 's', userId: 'b', token: 't1' }, undefined, storage)
+
+    tick()
+    sent[0].answer(200, { Id: 'b', Name: 'Bo' })
+
+    assert.deepEqual(store.list('s').map((a) => a.UserId), ['b'])
 })
 
 test('an administrator whose sign-in was not saved is not asked about again until it signs in again', () => {

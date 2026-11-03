@@ -15,7 +15,7 @@
     var STORE_VERSION = 1;
     var UNREADABLE_KEY = 'quickswitch-unreadable';
     // The fields of a saved account this build manages; any others, from a newer build, are kept.
-    var ACCOUNT_FIELDS = ['UserId', 'Name', 'AccessToken', 'PrimaryImageTag', 'Addresses', 'Stale'];
+    var ACCOUNT_FIELDS = ['UserId', 'Name', 'AccessToken', 'PrimaryImageTag', 'Addresses', 'Stale', 'Admin'];
     var ACCENT = '#00a4dc';
     // Avatar colours for accounts without a profile picture; white text passes 3:1 on each at tile size.
     var COLORS = ['#0081b0', '#8e44ad', '#c0561b', '#1f8a4c', '#b03a6b', '#5a6acf', '#8a6d00', '#00796b'];
@@ -162,6 +162,12 @@
                     entry[field] = accounts[at][field];
                 }
             }
+        }
+        // Saved as an administrator only through the question; never shown.
+        if (typeof account.Admin === 'boolean') {
+            entry.Admin = account.Admin;
+        } else if (at !== -1 && accounts[at].Admin === true) {
+            entry.Admin = true;
         }
         var addresses = at !== -1 && accounts[at].Addresses instanceof Array ? accounts[at].Addresses.slice() : [];
         var address = addressKey(account.Address);
@@ -429,6 +435,16 @@
         return !!adding || !!returning || switching || !!addingFrom(serverId);
     }
 
+    // jellyfin-web's Remember me, which it stores for the device as each
+    // sign-in is typed; off, jellyfin-web drops the sign-in at the next load.
+    function rememberSignIn() {
+        try {
+            return window.localStorage.getItem('enableAutoLogin') !== 'false';
+        } catch (e) {
+            return true;
+        }
+    }
+
     function watch() {
         var now = signedIn();
         if (client() && new Date().getTime() - signOutCheck.at >= 5000) {
@@ -464,10 +480,24 @@
         }
         request('GET', 'Users/Me', now.token, function (status, user) {
             if (status === 200 && user && user.Id === now.userId) {
-                var account = { UserId: user.Id, Name: user.Name, AccessToken: now.token, PrimaryImageTag: user.PrimaryImageTag, Address: here };
+                var admin = !!(user.Policy && user.Policy.IsAdministrator);
+                var approved = at !== -1 && saved[at].Admin === true;
+                var account = { UserId: user.Id, Name: user.Name, AccessToken: now.token, PrimaryImageTag: user.PrimaryImageTag, Address: here, Admin: admin && approved };
+                // Remember me unticked: this sign-in isn't kept on the device,
+                // and neither is a copy saved before.
+                if (!rememberSignIn()) {
+                    if (at !== -1) {
+                        forget(now.serverId, now.userId);
+                    }
+                    if (adding) {
+                        added(account, true);
+                    }
+                    return;
+                }
                 // An administrator is saved only when someone chooses to: anyone
-                // using the device could then manage the server.
-                if (at === -1 && user.Policy && user.Policy.IsAdministrator) {
+                // using the device could then manage the server. That includes
+                // an account saved before it was made one.
+                if (admin && !approved) {
                     askSaveAdmin(account, now.serverId);
                     return;
                 }
@@ -1125,12 +1155,18 @@
         dialog.setAttribute('aria-label', 'Remove ' + account.Name);
         dialog.appendChild(avatarCircle(account, serverAddress(), 'qs-avatar'));
         dialog.appendChild(el('h2', null, 'Remove ' + account.Name + ' from ' + deviceWord() + '?'));
-        dialog.appendChild(el('p', null, account.Name + ' is signed out here. Their account and watch history stay on the server, and signing in again adds them back.'));
+        // At an address it didn't sign in through, its token is never sent, so
+        // it can't be signed out on the server from here.
+        var elsewhere = !knownAt(account, serverAddress());
+        dialog.appendChild(el('p', null, elsewhere
+            ? account.Name + '’s sign-in keeps working on the server, because it can’t be signed out from this address. To end it, sign '
+                + account.Name + ' out where they signed in, or remove this device in Dashboard → Devices.'
+            : account.Name + ' is signed out here. Their account and watch history stay on the server, and signing in again adds them back.'));
         var keep = el('button', 'qs-button qs-wide', 'Keep');
         keep.type = 'button';
         keep.setAttribute('data-qs-action', 'confirm-keep');
         keep.addEventListener('click', function () { render('manage', 'bin:' + account.UserId); });
-        var remove = el('button', 'qs-button qs-wide', 'Remove');
+        var remove = el('button', 'qs-button qs-wide', elsewhere ? 'Remove from ' + deviceWord() : 'Remove');
         remove.type = 'button';
         remove.setAttribute('data-qs-action', 'confirm-remove');
         remove.addEventListener('click', function () { removeAccount(account, remove); });
@@ -1492,8 +1528,11 @@
         }
         var decide = function (keep) {
             if (keep) {
+                account.Admin = true;
                 save(serverId, account);
             } else {
+                // An account saved before it was made an administrator goes too.
+                forget(serverId, account.UserId);
                 declineSave(serverId, account.UserId, account.AccessToken);
             }
             if (adding) {
@@ -1527,7 +1566,8 @@
         dialog.appendChild(no);
         scrim.appendChild(dialog);
         overlay.appendChild(scrim);
-        yes.focus();
+        // Saving an administrator takes a deliberate move to Save.
+        no.focus();
         updateHints();
     }
 
@@ -1810,12 +1850,17 @@
             }
             var fresh = { UserId: user.Id, Name: user.Name, AccessToken: account.AccessToken, PrimaryImageTag: user.PrimaryImageTag };
             save(now.serverId, fresh);
+            // Made an administrator since it was saved: asked about once the switch is done.
+            var promoted = !!(user.Policy && user.Policy.IsAdministrator) && account.Admin !== true;
             var arrived = function () {
                 var wait = Math.max(0, SPLASH_MS - (new Date().getTime() - started));
                 window.setTimeout(function () {
                     switching = false;
                     close();
                     toast('Now watching as ' + fresh.Name, fresh);
+                    if (promoted) {
+                        askSaveAdmin({ UserId: fresh.UserId, Name: fresh.Name, AccessToken: fresh.AccessToken, PrimaryImageTag: fresh.PrimaryImageTag, Address: serverAddress() }, now.serverId);
+                    }
                 }, wait);
             };
             signInInPlace(user, account.AccessToken, now.serverId, arrived, function () {
