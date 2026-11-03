@@ -5,7 +5,7 @@ import js from '@eslint/js';
 const browser = Object.fromEntries([
     'window', 'document', 'navigator', 'location', 'localStorage', 'console',
     'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'requestAnimationFrame',
-    'XMLHttpRequest', 'Event', 'CustomEvent', 'MutationObserver', 'getComputedStyle',
+    'XMLHttpRequest', 'Event', 'CustomEvent', 'MutationObserver', 'getComputedStyle', 'performance',
 ].map((name) => [name, 'readonly']));
 
 export default [
@@ -21,11 +21,16 @@ export default [
         },
     },
     {
-        files: ['tests/switcher/**/*.js'],
+        // The tests run in Node; the browser tests also pass functions to the page, which use its globals.
+        files: ['tests/**/*.js'],
         languageOptions: {
             ecmaVersion: 'latest',
             sourceType: 'commonjs',
-            globals: { require: 'readonly', module: 'writable', __dirname: 'readonly', console: 'readonly', process: 'readonly', setTimeout: 'readonly', clearTimeout: 'readonly' },
+            globals: {
+                ...browser,
+                require: 'readonly', module: 'writable', __dirname: 'readonly', process: 'readonly', fetch: 'readonly',
+                KeyboardEvent: 'readonly',
+            },
         },
     },
 ];
