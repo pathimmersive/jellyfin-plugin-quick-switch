@@ -213,7 +213,8 @@ restart_and_check() {
   cmp -s "$served" images/icon.png || fail "the installed $plugin_name's image is not images/icon.png"
 
   curl -sSf -o "$served" "$api/$script_path" || fail "GET /$script_path failed"
-  cmp -s "$served" src/switcher/quick-switch.js || fail "GET /$script_path is not src/switcher/quick-switch.js"
+  # Line endings aside: a Windows checkout may hold the script with CRLF.
+  cmp -s <(tr -d '\r' <"$served") <(tr -d '\r' <src/switcher/quick-switch.js) || fail "GET /$script_path is not src/switcher/quick-switch.js"
 
   page="$(curl -sSf "$api/web/index.html")" || fail "GET /web/index.html failed"
   grep -qF "<script src=\"../$script_path?v=$v\"></script>" <<<"$page" \
